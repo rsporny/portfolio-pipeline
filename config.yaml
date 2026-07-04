@@ -1,0 +1,15 @@
+github_user: rsporny
+repos:
+  allowlist:
+    - rsporny/portfolio-pipeline
+    - midnightntwrk/midnight-node
+redaction:
+  forbidden_phrases: []
+output:
+  site_repo_path: ~/repos/landing-page
+  site_devlog_dir: content/devlog
+anthropic:
+  model: claude-sonnet-4-6
+  max_tokens: 4000
+locale:
+  timezone: Europe/Warsaw
