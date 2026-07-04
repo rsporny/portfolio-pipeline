@@ -1,0 +1,15 @@
+{
+  "sha": "abc123",
+  "commit": {
+    "message": "Add config loader with pydantic validation",
+    "author": { "date": "2026-07-01T10:00:00Z" }
+  },
+  "files": [
+    {
+      "filename": "src/pipeline/config.py",
+      "additions": 42,
+      "deletions": 3,
+      "changes": 45
+    }
+  ]
+}

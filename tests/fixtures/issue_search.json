@@ -1,0 +1,11 @@
+{
+  "total_count": 1,
+  "items": [
+    {
+      "number": 7,
+      "title": "Flaky test in CI",
+      "body": "Intermittent failure on the config round-trip test.",
+      "closed_at": "2026-07-02T12:00:00Z"
+    }
+  ]
+}
