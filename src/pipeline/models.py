@@ -112,3 +112,28 @@ class Activity(BaseModel):
     @property
     def is_empty(self) -> bool:
         return all(repo.is_empty for repo in self.repos)
+
+
+# --- Transformer output schemas ---------------------------------------------
+
+
+class Initiative(BaseModel):
+    """One unit of work from the Stage A technical summary."""
+
+    name: str
+    what: str
+    why_it_matters: str
+    tech: list[str] = Field(default_factory=list)
+
+
+class Initiatives(BaseModel):
+    initiatives: list[Initiative]
+
+
+class Content(BaseModel):
+    """Stage B writing output (one document per field)."""
+
+    devlog: str
+    linkedin_pl: str
+    linkedin_en: str
+    highlights: list[str] = Field(default_factory=list)
