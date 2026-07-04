@@ -33,7 +33,7 @@ def test_load_valid_config(config_file):
 
 def test_defaults_are_applied(config_file):
     cfg = load_config(config_file(MINIMAL))
-    assert cfg.anthropic.model == "claude-sonnet-4-6"
+    assert cfg.anthropic.model == "claude-opus-4-8"
     assert cfg.anthropic.max_tokens == 4000
     assert cfg.locale.timezone == "Europe/Warsaw"
     assert cfg.redaction.forbidden_phrases == []

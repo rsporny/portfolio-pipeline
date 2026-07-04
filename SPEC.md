@@ -40,7 +40,7 @@ output:
   site_repo_path: ~/code/sporny.pl   # target of the publish command
   site_devlog_dir: content/devlog
 anthropic:
-  model: claude-sonnet-4-6
+  model: claude-opus-4-8
   max_tokens: 4000
 locale:
   timezone: Europe/Warsaw

@@ -22,7 +22,7 @@ This is a building-in-public project: a practical experiment in wiring AI into a
 ## Stack and conventions
 
 - Python 3.11+, dependency management: `uv` (fallback: pip + requirements.txt).
-- CLI: `typer`. HTTP: `httpx`. Claude: official `anthropic` SDK, model `claude-sonnet-4-6`.
+- CLI: `typer`. HTTP: `httpx`. Claude: official `anthropic` SDK, model `claude-opus-4-8`.
 - Structure: `src/pipeline/` (package), `tests/` (pytest, mocked APIs — no real API calls in tests), `drafts/`, `approved/`, `published/`, `config.yaml`, `.github/workflows/weekly.yml`.
 - Full type hints, `ruff` as linter/formatter.
 - Commits: conventional commits, in English.

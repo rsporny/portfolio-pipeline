@@ -20,7 +20,7 @@ class OutputConfig(BaseModel):
 
 
 class AnthropicConfig(BaseModel):
-    model: str = "claude-sonnet-4-6"
+    model: str = "claude-opus-4-8"
     max_tokens: int = 4000
 
 
