@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from pipeline.config import Config, OutputConfig, ReposConfig
@@ -60,6 +62,23 @@ def test_publish_copies_devlog_to_site_and_moves_bundle(tmp_path):
 
     assert results[0].week == week
     assert len(results[0].site_files) == 1
+
+
+def test_publish_writes_site_manifest(tmp_path):
+    approved, published = tmp_path / "approved", tmp_path / "published"
+    site = _site(tmp_path)
+    week = _approved(approved)
+
+    publish_approved(_config(site), approved_dir=approved, published_dir=published)
+
+    manifest = site / "content/devlog" / "index.json"
+    assert manifest.exists()
+    entries = json.loads(manifest.read_text())
+    assert entries[0]["week"] == week
+    assert entries[0]["title"] == "Log #1"
+    # publish stamps a publication date (YYYY-MM-DD) that the manifest carries
+    assert entries[0]["date"]
+    assert "published_at" in parse((published / week / "devlog.md").read_text())[0]
 
 
 def test_publish_dry_run_changes_nothing(tmp_path):

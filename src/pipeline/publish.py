@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import logging
 import shutil
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 
 from .config import Config
@@ -25,6 +27,28 @@ class PublishResult:
     week: str
     site_files: list[Path] = field(default_factory=list)
     published_files: list[Path] = field(default_factory=list)
+
+
+def write_manifest(site_dir: Path) -> Path:
+    """(Re)build ``index.json`` in the site devlog dir from the published
+    ``<week>.md`` files — the manifest the website reads to list entries."""
+    entries = []
+    for md in site_dir.glob("*.md"):
+        front, _ = parse(md.read_text())
+        if not front:
+            continue
+        published = front.get("published_at") or front.get("generated_at")
+        entries.append(
+            {
+                "week": str(front.get("week") or md.stem),
+                "title": str(front.get("title", "")),
+                "date": str(published)[:10] if published else "",
+            }
+        )
+    entries.sort(key=lambda e: e["week"], reverse=True)
+    manifest = site_dir / "index.json"
+    manifest.write_text(json.dumps(entries, indent=2, ensure_ascii=False) + "\n")
+    return manifest
 
 
 def publish_approved(
@@ -70,6 +94,7 @@ def publish_approved(
                 front, body = parse(f.read_text())
                 if front:
                     front["status"] = "published"
+                    front.setdefault("published_at", datetime.now(UTC).date().isoformat())
                     text = dump(front, body)
                 else:
                     text = f.read_text()
@@ -84,5 +109,8 @@ def publish_approved(
             with contextlib.suppress(OSError):
                 week_dir.rmdir()  # remove the now-empty approved/<week>/
         results.append(result)
+
+    if not dry_run and any(r.site_files for r in results):
+        write_manifest(site_dir)
 
     return results

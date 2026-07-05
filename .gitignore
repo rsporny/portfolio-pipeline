@@ -15,3 +15,7 @@ raw/*
 !raw/.gitkeep
 drafts/*
 !drafts/.gitkeep
+approved/*
+!approved/.gitkeep
+published/*
+!published/.gitkeep
