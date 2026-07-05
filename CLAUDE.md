@@ -2,7 +2,7 @@
 
 ## What this project is
 
-An automated "commit → content" pipeline: once a week it collects the owner's public development activity (commits, PRs from GitHub), then uses the Claude API in a two-stage process to turn it into content drafts: a devlog entry, LinkedIn posts (PL + EN), and a list of highlights worth revisiting later. Drafts land in an editorial queue — a human always reviews and approves before anything is published.
+An automated "commit → content" pipeline: once a week it collects the owner's public development activity (commits, PRs from GitHub), then uses the Claude API in a two-stage process to turn it into content drafts: a titled, auto-numbered devlog entry, one channel-neutral English social post (the website owns per-platform share buttons), and a list of highlights worth revisiting later. The work is categorized and generalized for a broad engineering audience, and the devlog ends with a proof-of-work link. Drafts land in an editorial queue — a human always reviews and approves before anything is published.
 
 This is a building-in-public project: a practical experiment in wiring AI into a real engineering workflow, with a human in the loop. The repo itself is the subject of its own first devlog entries. It is public and represents the owner's work — code quality, tests, and the README matter as much as the tool itself.
 

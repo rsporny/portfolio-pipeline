@@ -28,8 +28,16 @@ class LocaleConfig(BaseModel):
     timezone: str = "Europe/Warsaw"
 
 
+class ContentConfig(BaseModel):
+    # Prefix for the auto-numbered devlog title, e.g. "Senior SDET log #3: …".
+    devlog_title_prefix: str = "Senior SDET log"
+
+
 class ReposConfig(BaseModel):
     allowlist: list[str]
+    # Optional per-repo domain context, used to categorize and generalize the
+    # work for a broad audience (e.g. "…/midnight-node": "blockchain node …").
+    descriptions: dict[str, str] = {}
 
     @field_validator("allowlist")
     @classmethod
@@ -46,6 +54,7 @@ class Config(BaseModel):
     output: OutputConfig = OutputConfig()
     anthropic: AnthropicConfig = AnthropicConfig()
     locale: LocaleConfig = LocaleConfig()
+    content: ContentConfig = ContentConfig()
 
 
 def load_config(path: Path | str | None = None) -> Config:

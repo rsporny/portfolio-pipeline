@@ -2,28 +2,35 @@
 
 ## Goal
 
-Once a week, turn real development work into content drafts (devlog, LinkedIn posts, highlights), with a human in the loop. Owner's weekly cost: ≤30 min of editing.
+Once a week, turn real development work into content drafts (a titled devlog, one channel-neutral social post, highlights), with a human in the loop. Owner's weekly cost: ≤30 min of editing.
 
 ## Data flow
 
 ```
 collect ──► raw/YYYY-Wnn/activity.json
 transform ──► stage A (technical summary) ──► stage B (writing)
-          ──► drafts/YYYY-Wnn/{devlog.md, linkedin-pl.md, linkedin-en.md, highlights.md, summary-tech.md}
+          ──► drafts/YYYY-Wnn/{devlog.md, social.md, highlights.md, summary-tech.md (+ summary-tech.json)}
 [human edits, moves files to approved/]
 publish ──► copies approved/* into a local clone of the sporny.pl website repo (path in config)
 ```
+
+Content is written for a broad engineering audience (readers who don't know the
+specific repos): the work is categorized and generalized, and the devlog ends
+with a proof-of-work link. Social output is one channel-neutral English post;
+the website owns the per-platform (LinkedIn / X / …) share buttons.
 
 ## Module 1: Collector
 
 Source: GitHub REST API (token from env `GITHUB_TOKEN`; a fine-grained PAT with minimal scope — public repositories are readable without elevated permissions).
 
 For each repo on the allowlist in `config.yaml`, fetch within the given time window (default 7 days, override with `--since` / `--until`):
-- commits authored by the configured user (`github_user: rsporny`): sha, date, message, list of changed files with stats (no diff contents in the MVP — token economy; `include_diffs: false` config flag reserved for the future),
-- PRs created/merged: title, description, labels, status,
-- issues closed by the user: title, description.
+- commits authored by the configured user (`github_user: rsporny`): sha, date, message, `url`, list of changed files with stats (no diff contents in the MVP — token economy; `include_diffs: false` config flag reserved for the future),
+- PRs created by the user: title, description, labels, status, `url`,
+- issues assigned to the user and closed in the window: title, description, `url`.
 
-Output: `raw/YYYY-Wnn/activity.json` (versioned schema). If there is no activity — write an empty file and exit with an informational message, not an error.
+The `url` (GitHub `html_url`) is captured so drafts can cite proof of work.
+
+Output: `raw/YYYY-Wnn/activity.json` (versioned schema, currently `schema_version: 2`). If there is no activity — write an empty file and exit with an informational message, not an error.
 
 ### Config (`config.yaml`)
 
@@ -34,6 +41,8 @@ repos:
     - rsporny/portfolio-pipeline
     # public/open-source repos the owner contributes to,
     # or the owner's own private repos — nothing else
+  descriptions:                        # optional per-repo domain context
+    rsporny/portfolio-pipeline: "Commit→content pipeline (Python)."
 redaction:
   forbidden_phrases: []
 output:
@@ -44,6 +53,8 @@ anthropic:
   max_tokens: 4000
 locale:
   timezone: Europe/Warsaw
+content:
+  devlog_title_prefix: Senior SDET log   # devlog title becomes "<prefix> #N: …"
 ```
 
 ## Module 2: Transformer (two-stage)
@@ -52,48 +63,27 @@ Step 0 — redaction: remove/mask phrases from `redaction.forbidden_phrases` in 
 
 ### Stage A — technical summary
 
-Prompt (parameterized with `activity.json` data), expected JSON output:
+Prompt (parameterized with `activity.json` data **and** the repo descriptions
+from config, so the work can be categorized and generalized). Per initiative:
+`name`, `category` (a domain label a general engineer recognizes), `what`,
+`why_it_matters`, `tech`, and `links` (commit/PR URLs = proof of work). Expected
+JSON: `{"initiatives": [{"name", "category", "what", "why_it_matters", "tech": [], "links": []}]}`.
 
-```
-You are an engineer's assistant. Based on the git activity below from a single
-week, group the work into 2–5 initiatives. For each: name, what was done
-(3–5 sentences, technical, in English), why it matters from an engineering
-standpoint, technologies used. Ignore cosmetic commits (typos, formatting)
-unless they add up to something bigger. Respond ONLY with valid JSON matching
-this schema: {"initiatives": [{"name", "what", "why_it_matters", "tech": []}]}
-```
-
-Output: `drafts/YYYY-Wnn/summary-tech.md` (rendered from JSON) + the raw JSON next to it.
+Output: `drafts/YYYY-Wnn/summary-tech.md` (rendered from JSON) + `summary-tech.json` (the raw JSON) next to it.
 
 ### Stage B — writing
 
-Input: JSON from stage A. Prompt:
+Input: JSON from stage A. The prompt targets a broad engineering audience that
+does not know the specific repos, and produces:
 
-```
-You are helping a senior SDET (15 years in test automation) write about his
-week of engineering work. He shares practical, hands-on experience with test
-automation and AI in engineering workflows. Audience: experienced engineers
-and engineering leaders. Tone: concrete, engineering-minded, first person,
-curious rather than promotional, no buzzwords or exclamation marks, numbers
-and decisions over tool names. This is knowledge sharing — "what I built and
-what I learned" — never a pitch. Based on the initiatives below, generate:
+1. `title` — an auto-numbered devlog title `"<content.devlog_title_prefix> #N: <subtitle>"`, where N = (devlogs already in `published/`) + 1.
+2. `devlog` (English, 350–550 words) — opens with generalized context (what domain, why a general engineer should care), explains the work without assuming repo knowledge (a short example/analogy where it helps), follows problem → decision → outcome, and ends with a proof-of-work link.
+3. `social` (100–180 words, English) — one channel-neutral post (hook first line, one concrete lesson, ≤3 hashtags, no CTA) that draws the reader to the full devlog. The website owns per-platform share buttons.
+4. `highlights` — notable items worth revisiting, one sentence each, tagged with the initiative name.
 
-1. DEVLOG (in English, 300–500 words): a weekly "what I built and what I
-   learned" entry, in a problem → decision → outcome format.
-2. LINKEDIN_PL (100–180 words, in Polish): one post about the most
-   interesting initiative, hook in the first line, one concrete observation
-   or lesson, no hashtag wall (max 3 hashtags), no call to action.
-3. LINKEDIN_EN: an independently written (not 1:1 translated) English
-   counterpart.
-4. HIGHLIGHTS: a list of notable items from this week worth revisiting later
-   (a metric, an architectural decision, a measurable result) — one sentence
-   each, tagged with the initiative name.
+Respond ONLY with JSON: `{"title", "devlog", "social", "highlights": []}`.
 
-Respond ONLY with JSON: {"devlog", "linkedin_pl", "linkedin_en",
-"highlights": []}
-```
-
-Output: separate `.md` files in `drafts/YYYY-Wnn/`, each with front matter (`status: draft`, `week`, `generated_at`, `source_initiatives`).
+Output: `devlog.md`, `social.md`, `highlights.md` in `drafts/YYYY-Wnn/`, each with front matter (`title`, `status: draft`, `week`, `generated_at`, `source_initiatives`).
 
 Error handling: retry with backoff (3 attempts) on API errors; JSON validation (strip ```json fences); on failure, save the raw response to `drafts/YYYY-Wnn/_failed_raw.txt` and exit with a clear error.
 

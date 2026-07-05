@@ -24,6 +24,25 @@ def find_latest_activity(raw_dir: Path | str = "raw") -> Path:
     return candidates[-1]
 
 
+def next_entry_number(published_dir: Path | str = "published") -> int:
+    """Next devlog number = count of already-published devlogs + 1."""
+    return len(list(Path(published_dir).glob("*/devlog.md"))) + 1
+
+
+def _repo_context(config: Config, activity: Activity) -> str:
+    """Domain descriptions for the repos present in this week's activity."""
+    descriptions = config.repos.descriptions
+    lines: list[str] = []
+    seen: set[str] = set()
+    for repo_activity in activity.repos:
+        repo = repo_activity.repo
+        desc = descriptions.get(repo)
+        if desc and repo not in seen:
+            seen.add(repo)
+            lines.append(f"- {repo}: {desc}")
+    return "\n".join(lines)
+
+
 def _write_failed(out_dir: Path, raw: str) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / "_failed_raw.txt"
@@ -49,9 +68,10 @@ def _generate(llm: LLMClient, prompt: str, model_cls: type[BaseModel], out_dir: 
         ) from exc
 
 
-def _front_matter(week: str, generated_at: str, source_initiatives: list[str]) -> str:
+def _front_matter(week: str, generated_at: str, title: str, source_initiatives: list[str]) -> str:
     lines = [
         "---",
+        f"title: {json.dumps(title)}",
         "status: draft",
         f"week: {week}",
         f"generated_at: {generated_at}",
@@ -65,8 +85,11 @@ def _front_matter(week: str, generated_at: str, source_initiatives: list[str]) -
 def _render_summary(week: str, initiatives: Initiatives) -> str:
     lines = [f"# Technical summary — {week}", ""]
     for init in initiatives.initiatives:
+        heading = f"## {init.name}"
+        if init.category:
+            heading += f"  ·  _{init.category}_"
         lines += [
-            f"## {init.name}",
+            heading,
             "",
             f"**What:** {init.what}",
             "",
@@ -75,6 +98,8 @@ def _render_summary(week: str, initiatives: Initiatives) -> str:
             f"**Tech:** {', '.join(init.tech) if init.tech else '—'}",
             "",
         ]
+        if init.links:
+            lines += [f"**Links:** {', '.join(init.links)}", ""]
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -83,6 +108,7 @@ def transform_week(
     llm: LLMClient,
     raw_dir: Path | str = "raw",
     drafts_dir: Path | str = "drafts",
+    published_dir: Path | str = "published",
     week: str | None = None,
 ) -> Path:
     """Run redaction → Stage A → Stage B and write the draft bundle for a week."""
@@ -100,27 +126,31 @@ def transform_week(
     phrases = config.redaction.forbidden_phrases
 
     # Stage A — technical summary (redact input before sending).
+    repo_context = _repo_context(config, activity)
     redacted_a, n_a = redact(activity.model_dump_json(indent=2), phrases)
     logger.info("Stage A: %d phrase occurrence(s) redacted before the API call", n_a)
-    initiatives = _generate(llm, stage_a_prompt(redacted_a), Initiatives, out_dir)
+    initiatives = _generate(llm, stage_a_prompt(redacted_a, repo_context), Initiatives, out_dir)
     assert isinstance(initiatives, Initiatives)
 
     (out_dir / "summary-tech.json").write_text(initiatives.model_dump_json(indent=2))
     (out_dir / "summary-tech.md").write_text(_render_summary(week, initiatives))
 
     # Stage B — writing (redact the Stage A output too, per the hard constraint).
+    entry_number = next_entry_number(published_dir)
     redacted_b, n_b = redact(initiatives.model_dump_json(indent=2), phrases)
     logger.info("Stage B: %d phrase occurrence(s) redacted before the API call", n_b)
-    content = _generate(llm, stage_b_prompt(redacted_b), Content, out_dir)
+    prompt_b = stage_b_prompt(redacted_b, config.content.devlog_title_prefix, entry_number)
+    content = _generate(llm, prompt_b, Content, out_dir)
     assert isinstance(content, Content)
 
     generated_at = datetime.now(UTC).isoformat()
     names = [init.name for init in initiatives.initiatives]
-    front = _front_matter(week, generated_at, names)
+    front = _front_matter(week, generated_at, content.title, names)
 
-    (out_dir / "devlog.md").write_text(front + content.devlog.rstrip() + "\n")
-    (out_dir / "linkedin-pl.md").write_text(front + content.linkedin_pl.rstrip() + "\n")
-    (out_dir / "linkedin-en.md").write_text(front + content.linkedin_en.rstrip() + "\n")
+    (out_dir / "devlog.md").write_text(
+        front + f"# {content.title}\n\n" + content.devlog.rstrip() + "\n"
+    )
+    (out_dir / "social.md").write_text(front + content.social.rstrip() + "\n")
     highlights = "\n".join(f"- {item}" for item in content.highlights)
     (out_dir / "highlights.md").write_text(front + highlights + "\n")
 

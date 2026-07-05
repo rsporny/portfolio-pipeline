@@ -3,6 +3,14 @@ repos:
   allowlist:
     - rsporny/portfolio-pipeline
     - midnightntwrk/midnight-node
+  descriptions:
+    rsporny/portfolio-pipeline: >-
+      An automated commit→content pipeline that turns weekly GitHub activity
+      into devlog and social drafts via the Claude API, with a human-in-the-loop
+      editorial step. Python, typer, httpx, pydantic.
+    midnightntwrk/midnight-node: >-
+      Midnight blockchain node — a data-protection/privacy-focused network in
+      the Cardano ecosystem, built on Substrate (Rust).
 redaction:
   forbidden_phrases: []
 output:
@@ -13,3 +21,5 @@ anthropic:
   max_tokens: 4000
 locale:
   timezone: Europe/Warsaw
+content:
+  devlog_title_prefix: Senior SDET log

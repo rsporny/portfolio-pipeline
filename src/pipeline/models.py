@@ -5,7 +5,8 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 # Bump when the on-disk activity.json shape changes.
-SCHEMA_VERSION = 1
+# v2: added `url` (GitHub html_url) to commits/PRs/issues for proof-of-work links.
+SCHEMA_VERSION = 2
 
 
 class FileChange(BaseModel):
@@ -30,6 +31,7 @@ class Commit(BaseModel):
     sha: str
     date: datetime
     message: str
+    url: str = ""
     files: list[FileChange] = Field(default_factory=list)
 
     @classmethod
@@ -42,6 +44,7 @@ class Commit(BaseModel):
             sha=data["sha"],
             date=author["date"],
             message=commit.get("message", ""),
+            url=data.get("html_url", ""),
             files=[FileChange.from_api(f) for f in data.get("files", [])],
         )
 
@@ -52,6 +55,7 @@ class PullRequest(BaseModel):
     description: str = ""
     labels: list[str] = Field(default_factory=list)
     state: str = ""
+    url: str = ""
     created_at: datetime | None = None
     merged_at: datetime | None = None
 
@@ -67,6 +71,7 @@ class PullRequest(BaseModel):
             description=data.get("body") or "",
             labels=labels,
             state=data.get("state", ""),
+            url=data.get("html_url", ""),
             created_at=data.get("created_at"),
             merged_at=pr.get("merged_at") or data.get("merged_at"),
         )
@@ -76,6 +81,7 @@ class Issue(BaseModel):
     number: int
     title: str
     description: str = ""
+    url: str = ""
     closed_at: datetime | None = None
 
     @classmethod
@@ -84,6 +90,7 @@ class Issue(BaseModel):
             number=data["number"],
             title=data.get("title", ""),
             description=data.get("body") or "",
+            url=data.get("html_url", ""),
             closed_at=data.get("closed_at"),
         )
 
@@ -121,9 +128,11 @@ class Initiative(BaseModel):
     """One unit of work from the Stage A technical summary."""
 
     name: str
+    category: str = ""
     what: str
     why_it_matters: str
     tech: list[str] = Field(default_factory=list)
+    links: list[str] = Field(default_factory=list)
 
 
 class Initiatives(BaseModel):
@@ -131,9 +140,10 @@ class Initiatives(BaseModel):
 
 
 class Content(BaseModel):
-    """Stage B writing output (one document per field)."""
+    """Stage B writing output. One channel-neutral social post (the website
+    owns per-platform share buttons)."""
 
+    title: str
     devlog: str
-    linkedin_pl: str
-    linkedin_en: str
+    social: str
     highlights: list[str] = Field(default_factory=list)

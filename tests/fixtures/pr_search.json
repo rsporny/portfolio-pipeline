@@ -6,6 +6,7 @@
       "title": "Add GitHub collector",
       "body": "Fetches commits, PRs, and issues for allowlisted repos.",
       "state": "closed",
+      "html_url": "https://github.com/o/r/pull/5",
       "labels": [{ "name": "enhancement" }, { "name": "milestone-2" }],
       "created_at": "2026-07-02T09:00:00Z",
       "pull_request": { "merged_at": "2026-07-03T09:00:00Z" }

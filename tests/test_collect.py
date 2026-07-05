@@ -86,7 +86,7 @@ def test_collect_assembles_activity(httpx_mock):
     assert repo.commits[0].files[0].filename == "src/pipeline/config.py"
     assert len(repo.pull_requests) == 1
     assert len(repo.issues) == 1
-    assert activity.schema_version == 1
+    assert activity.schema_version == 2
 
 
 def test_collect_filters_by_author_and_window(httpx_mock):
@@ -141,6 +141,6 @@ def test_write_activity_roundtrip(httpx_mock, tmp_path):
 
     out_path = write_activity(activity, tmp_path)
     data = json.loads(out_path.read_text())
-    assert data["schema_version"] == 1
+    assert data["schema_version"] == 2
     assert data["week"] == activity.week
     assert data["repos"][0]["repo"] == "o/r"

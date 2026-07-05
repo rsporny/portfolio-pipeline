@@ -11,7 +11,7 @@ import pytest
 from pipeline.config import Config, RedactionConfig, ReposConfig
 from pipeline.llm import LLMClient, TransformError, parse_json_response, strip_fences
 from pipeline.models import Activity, Commit, RepoActivity
-from pipeline.transform import find_latest_activity, transform_week
+from pipeline.transform import find_latest_activity, next_entry_number, transform_week
 
 # --- JSON parsing -----------------------------------------------------------
 
@@ -117,9 +117,11 @@ def _stage_a():
         "initiatives": [
             {
                 "name": "Collector",
+                "category": "Developer tooling",
                 "what": "Built the GitHub collector.",
                 "why_it_matters": "Reliable weekly data.",
                 "tech": ["Python", "httpx"],
+                "links": ["https://github.com/o/r/pull/5"],
             }
         ]
     }
@@ -128,9 +130,9 @@ def _stage_a():
 
 def _stage_b():
     data = {
+        "title": "Senior SDET log #1: Wiring commits into a content pipeline",
         "devlog": "This week I built the collector.",
-        "linkedin_pl": "W tym tygodniu zbudowałem kolektor.",
-        "linkedin_en": "This week I shipped a collector.",
+        "social": "This week I shipped a collector. Here's what I learned.",
         "highlights": ["Collector — 23 tests passing"],
     }
     return data, json.dumps(data)
@@ -156,10 +158,10 @@ def _write_activity(raw_dir, week: str = "2026-W27") -> str:
     return week
 
 
-def _config(forbidden=None):
+def _config(forbidden=None, descriptions=None):
     return Config(
         github_user="rsporny",
-        repos=ReposConfig(allowlist=["o/r"]),
+        repos=ReposConfig(allowlist=["o/r"], descriptions=descriptions or {}),
         redaction=RedactionConfig(forbidden_phrases=forbidden or []),
     )
 
@@ -176,20 +178,30 @@ def test_transform_week_writes_all_drafts(tmp_path):
         "summary-tech.md",
         "summary-tech.json",
         "devlog.md",
-        "linkedin-pl.md",
-        "linkedin-en.md",
+        "social.md",
         "highlights.md",
     ):
         assert (out_dir / name).exists(), name
+    # Polish/LinkedIn-specific drafts are gone.
+    assert not (out_dir / "linkedin-pl.md").exists()
+    assert not (out_dir / "linkedin-en.md").exists()
 
     devlog = (out_dir / "devlog.md").read_text()
     assert devlog.startswith("---")
     assert "status: draft" in devlog
     assert f"week: {week}" in devlog
+    assert "Senior SDET log #1" in devlog  # title in front matter and H1
+    assert "# Senior SDET log #1:" in devlog
     assert "Collector" in devlog  # source_initiatives front matter
     assert "This week I built the collector." in devlog
 
-    assert "## Collector" in (out_dir / "summary-tech.md").read_text()
+    social = (out_dir / "social.md").read_text()
+    assert "This week I shipped a collector." in social
+
+    summary = (out_dir / "summary-tech.md").read_text()
+    assert "## Collector" in summary
+    assert "Developer tooling" in summary  # category rendered
+    assert "https://github.com/o/r/pull/5" in summary  # proof-of-work link
     assert "- Collector — 23 tests passing" in (out_dir / "highlights.md").read_text()
 
 
@@ -244,3 +256,49 @@ def test_find_latest_activity_picks_newest(tmp_path):
 def test_find_latest_activity_raises_when_empty(tmp_path):
     with pytest.raises(FileNotFoundError):
         find_latest_activity(tmp_path / "raw")
+
+
+def test_transform_passes_repo_context_to_stage_a(tmp_path):
+    raw_dir, drafts_dir = tmp_path / "raw", tmp_path / "drafts"
+    week = _write_activity(raw_dir)
+    llm = _FakeLLM([_stage_a(), _stage_b()])
+
+    transform_week(
+        _config(descriptions={"o/r": "A blockchain node in the Cardano ecosystem."}),
+        llm,
+        raw_dir=raw_dir,
+        drafts_dir=drafts_dir,
+        published_dir=tmp_path / "published",
+        week=week,
+    )
+
+    assert "A blockchain node in the Cardano ecosystem." in llm.prompts[0]
+
+
+def test_transform_uses_next_entry_number_in_title_prompt(tmp_path):
+    raw_dir, drafts_dir = tmp_path / "raw", tmp_path / "drafts"
+    published_dir = tmp_path / "published"
+    for wk in ("2026-W20", "2026-W21"):  # two published → next is #3
+        (published_dir / wk).mkdir(parents=True)
+        (published_dir / wk / "devlog.md").write_text("x")
+    week = _write_activity(raw_dir)
+    llm = _FakeLLM([_stage_a(), _stage_b()])
+
+    transform_week(
+        _config(),
+        llm,
+        raw_dir=raw_dir,
+        drafts_dir=drafts_dir,
+        published_dir=published_dir,
+        week=week,
+    )
+
+    assert "#3:" in llm.prompts[1]  # Stage B prompt carries the computed number
+
+
+def test_next_entry_number(tmp_path):
+    published = tmp_path / "published"
+    assert next_entry_number(published) == 1
+    (published / "2026-W20").mkdir(parents=True)
+    (published / "2026-W20" / "devlog.md").write_text("x")
+    assert next_entry_number(published) == 2

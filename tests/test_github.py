@@ -18,6 +18,7 @@ def test_commit_from_api_parses_stats():
     assert commit.sha == "abc123"
     assert commit.message.startswith("Add config loader")
     assert commit.date.year == 2026
+    assert commit.url == "https://github.com/o/r/commit/abc123"
     assert len(commit.files) == 1
     assert commit.files[0].filename == "src/pipeline/config.py"
     assert commit.files[0].changes == 45
@@ -29,6 +30,7 @@ def test_pull_request_from_api_parses_labels_and_merge():
     assert pr.number == 5
     assert pr.labels == ["enhancement", "milestone-2"]
     assert pr.merged_at is not None
+    assert pr.url == "https://github.com/o/r/pull/5"
     assert pr.description.startswith("Fetches commits")
 
 
@@ -37,6 +39,7 @@ def test_issue_from_api():
     issue = Issue.from_api(item)
     assert issue.number == 7
     assert issue.title == "Flaky test in CI"
+    assert issue.url == "https://github.com/o/r/issues/7"
     assert issue.closed_at is not None
 
 

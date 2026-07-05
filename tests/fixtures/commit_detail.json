@@ -1,5 +1,6 @@
 {
   "sha": "abc123",
+  "html_url": "https://github.com/o/r/commit/abc123",
   "commit": {
     "message": "Add config loader with pydantic validation",
     "author": { "date": "2026-07-01T10:00:00Z" }
