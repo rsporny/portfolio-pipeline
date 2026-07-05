@@ -8,3 +8,10 @@ dist/
 build/
 .pytest_cache/
 .ruff_cache/
+
+# Generated content from local runs. The keep-files stay tracked so the dirs
+# exist; the weekly GitHub Action force-adds these to the editorial PR branch.
+raw/*
+!raw/.gitkeep
+drafts/*
+!drafts/.gitkeep

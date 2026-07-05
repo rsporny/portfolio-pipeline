@@ -9,6 +9,8 @@ from .config import Config, load_config
 from .github import GitHubClient
 from .llm import LLMClient, TransformError
 from .models import Activity
+from .publish import PublishError, publish_approved
+from .review import list_drafts
 from .transform import transform_week
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
@@ -19,6 +21,7 @@ CONFIG_OPTION = typer.Option("config.yaml", "--config", help="Path to config.yam
 SINCE_OPTION = typer.Option(None, help="Start date ISO-8601 (YYYY-MM-DD)")
 UNTIL_OPTION = typer.Option(None, help="End date ISO-8601 (YYYY-MM-DD)")
 WEEK_OPTION = typer.Option(None, "--week", help="Target ISO week (YYYY-Wnn); default: newest")
+DRY_RUN_OPTION = typer.Option(False, "--dry-run", help="Preview without writing files")
 
 
 def _transform(cfg: Config, week: str | None) -> None:
@@ -81,10 +84,35 @@ def run(
 @app.command()
 def review() -> None:
     """List drafts awaiting editorial review."""
-    typer.echo("review: not yet implemented")
+    records = list_drafts()
+    if not records:
+        typer.echo("No drafts found in drafts/.")
+        return
+    typer.echo(f"{'WEEK':<10} {'STATUS':<10} {'FILE':<15} TITLE")
+    for record in records:
+        typer.echo(f"{record.week:<10} {record.status:<10} {record.file:<15} {record.title}")
+    typer.echo("\nTo approve: move a week's files into approved/<week>/ and edit freely.")
 
 
 @app.command()
-def publish() -> None:
+def publish(config: str = CONFIG_OPTION, dry_run: bool = DRY_RUN_OPTION) -> None:
     """Copy approved files into the website repo (manual step, no auto-push)."""
-    typer.echo("publish: not yet implemented")
+    cfg = load_config(config)
+    try:
+        results = publish_approved(cfg, dry_run=dry_run)
+    except PublishError as exc:
+        typer.echo(f"publish failed: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    if not results:
+        typer.echo("Nothing to publish (approved/ is empty).")
+        return
+    verb = "Would publish" if dry_run else "Published"
+    for result in results:
+        for site_file in result.site_files:
+            typer.echo(f"{verb} {result.week} devlog → {site_file}")
+        typer.echo(
+            f"  {'would move' if dry_run else 'moved'} "
+            f"{len(result.published_files)} file(s) to published/{result.week}/"
+        )
+    if not dry_run:
+        typer.echo("\nSite repo not committed or pushed — that stays manual.")
