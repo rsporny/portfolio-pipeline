@@ -56,14 +56,19 @@ def publish_approved(
     approved_dir: Path | str = "approved",
     published_dir: Path | str = "published",
     *,
+    site_repo: Path | str | None = None,
     dry_run: bool = False,
 ) -> list[PublishResult]:
     """Copy each approved week's devlog into the site's devlog dir (status
     flipped to ``published``) and move the whole approved bundle to
-    ``published/``. Never commits or pushes the website repo."""
+    ``published/``. Never commits or pushes the website repo.
+
+    ``site_repo`` overrides ``config.output.site_repo_path`` (used by CI to
+    target a checked-out copy of the website repo)."""
     approved_dir = Path(approved_dir)
     published_dir = Path(published_dir)
-    site_dir = config.output.site_repo / config.output.site_devlog_dir
+    site_root = Path(site_repo).expanduser() if site_repo else config.output.site_repo
+    site_dir = site_root / config.output.site_devlog_dir
 
     week_dirs = sorted(p for p in approved_dir.glob("*") if p.is_dir())
     if not week_dirs:

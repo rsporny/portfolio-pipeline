@@ -1,0 +1,128 @@
+name: Weekly devlog
+
+on:
+  schedule:
+    - cron: "0 16 * * 0" # Sundays 16:00 UTC (18:00 CEST)
+  workflow_dispatch:
+    inputs:
+      since:
+        description: "Start date YYYY-MM-DD (default: last 7 days)"
+        required: false
+
+# The default token stays read-only; writing to the website repo uses the
+# scoped LANDING_PAGE_TOKEN PAT below. The Action only opens a PR — it never
+# merges, so nothing is published without a human merge.
+permissions:
+  contents: read
+
+concurrency:
+  group: weekly-devlog
+  cancel-in-progress: false
+
+jobs:
+  devlog:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout pipeline
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install
+        run: uv sync
+
+      - name: Collect activity
+        env:
+          # Fine-grained PAT: read-only contents/PRs/issues on the allowlisted repos.
+          GITHUB_TOKEN: ${{ secrets.GH_ACTIVITY_TOKEN }}
+        run: |
+          if [ -n "${{ github.event.inputs.since }}" ]; then
+            uv run pipeline collect --since "${{ github.event.inputs.since }}"
+          else
+            uv run pipeline collect
+          fi
+
+      - name: Resolve week and activity
+        id: meta
+        run: |
+          WEEK=$(ls -d raw/*/ 2>/dev/null | sort | tail -1 | xargs -r basename)
+          HAS=false
+          if [ -n "$WEEK" ]; then
+            HAS=$(python3 -c "import json; a=json.load(open('raw/$WEEK/activity.json')); print('true' if any(r['commits'] or r['pull_requests'] or r['issues'] for r in a['repos']) else 'false')")
+          fi
+          echo "week=$WEEK" >> "$GITHUB_OUTPUT"
+          echo "has_activity=$HAS" >> "$GITHUB_OUTPUT"
+          echo "Resolved week=$WEEK has_activity=$HAS"
+
+      - name: Transform (two-stage AI)
+        if: steps.meta.outputs.has_activity == 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: uv run pipeline transform --week "${{ steps.meta.outputs.week }}"
+
+      - name: Checkout landing-page
+        if: steps.meta.outputs.has_activity == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: rsporny/landing-page
+          token: ${{ secrets.LANDING_PAGE_TOKEN }}
+          path: site
+
+      - name: Stage devlog into the site checkout
+        if: steps.meta.outputs.has_activity == 'true'
+        run: |
+          WEEK="${{ steps.meta.outputs.week }}"
+          mkdir -p approved
+          cp -r "drafts/$WEEK" "approved/$WEEK"
+          uv run pipeline publish --site-repo site
+
+      - name: Build PR body
+        if: steps.meta.outputs.has_activity == 'true'
+        id: prbody
+        run: |
+          WEEK="${{ steps.meta.outputs.week }}"
+          strip() { awk '/^---$/{c++; next} c>=2' "$1"; }  # drop YAML front matter
+          {
+            echo "Automated devlog for **$WEEK**."
+            echo
+            echo "Review the \`content/devlog/$WEEK.md\` diff and **merge to publish** — Cloudflare deploys on merge. To change anything, edit this PR first."
+            echo
+            echo "### Social post (copy to LinkedIn / X)"
+            echo
+            strip "published/$WEEK/social.md"
+            echo
+            echo "### Highlights"
+            echo
+            strip "published/$WEEK/highlights.md"
+          } > pr-body.md
+          {
+            echo "body<<PRBODY"
+            cat pr-body.md
+            echo "PRBODY"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open PR to landing-page
+        if: steps.meta.outputs.has_activity == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.LANDING_PAGE_TOKEN }}
+          path: site
+          base: main
+          branch: devlog/${{ steps.meta.outputs.week }}
+          delete-branch: true
+          commit-message: "devlog: ${{ steps.meta.outputs.week }}"
+          title: "Devlog: ${{ steps.meta.outputs.week }}"
+          body: ${{ steps.prbody.outputs.body }}
+
+      - name: Upload run artifacts (audit)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-run-${{ steps.meta.outputs.week }}
+          path: |
+            raw/
+            drafts/
+          if-no-files-found: ignore

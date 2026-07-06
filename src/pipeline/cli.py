@@ -22,6 +22,9 @@ SINCE_OPTION = typer.Option(None, help="Start date ISO-8601 (YYYY-MM-DD)")
 UNTIL_OPTION = typer.Option(None, help="End date ISO-8601 (YYYY-MM-DD)")
 WEEK_OPTION = typer.Option(None, "--week", help="Target ISO week (YYYY-Wnn); default: newest")
 DRY_RUN_OPTION = typer.Option(False, "--dry-run", help="Preview without writing files")
+SITE_REPO_OPTION = typer.Option(
+    None, "--site-repo", help="Override output.site_repo_path (e.g. a CI checkout)"
+)
 
 
 def _transform(cfg: Config, week: str | None) -> None:
@@ -95,11 +98,15 @@ def review() -> None:
 
 
 @app.command()
-def publish(config: str = CONFIG_OPTION, dry_run: bool = DRY_RUN_OPTION) -> None:
+def publish(
+    config: str = CONFIG_OPTION,
+    dry_run: bool = DRY_RUN_OPTION,
+    site_repo: str | None = SITE_REPO_OPTION,
+) -> None:
     """Copy approved files into the website repo (manual step, no auto-push)."""
     cfg = load_config(config)
     try:
-        results = publish_approved(cfg, dry_run=dry_run)
+        results = publish_approved(cfg, site_repo=site_repo, dry_run=dry_run)
     except PublishError as exc:
         typer.echo(f"publish failed: {exc}", err=True)
         raise typer.Exit(1) from exc

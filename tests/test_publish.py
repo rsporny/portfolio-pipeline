@@ -81,6 +81,20 @@ def test_publish_writes_site_manifest(tmp_path):
     assert "published_at" in parse((published / week / "devlog.md").read_text())[0]
 
 
+def test_publish_site_repo_override(tmp_path):
+    approved, published = tmp_path / "approved", tmp_path / "published"
+    week = _approved(approved)
+    # config points at a bogus site; the override wins (CI-style checkout).
+    ci_site = tmp_path / "ci-checkout"
+    (ci_site / "content/devlog").mkdir(parents=True)
+    cfg = _config(tmp_path / "unused")
+
+    publish_approved(cfg, approved_dir=approved, published_dir=published, site_repo=ci_site)
+
+    assert (ci_site / "content/devlog" / f"{week}.md").exists()
+    assert (ci_site / "content/devlog" / "index.json").exists()
+
+
 def test_publish_dry_run_changes_nothing(tmp_path):
     approved, published = tmp_path / "approved", tmp_path / "published"
     site = _site(tmp_path)

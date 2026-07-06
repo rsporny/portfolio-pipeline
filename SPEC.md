@@ -95,11 +95,15 @@ Error handling: retry with backoff (3 attempts) on API errors; JSON validation (
 ## Module 4: Automation
 
 GitHub Actions `.github/workflows/weekly.yml`:
-- cron: Sunday 16:00 UTC (18:00 CEST),
-- runs `pipeline run`,
-- commits new `raw/` and `drafts/` files to a `drafts/YYYY-Wnn` branch and opens a PR — the PR is the editorial queue,
-- secrets: `ANTHROPIC_API_KEY`, `GITHUB_TOKEN` (fine-grained, repo-scoped),
-- `workflow_dispatch` with a `since` input for manual runs.
+- cron: Sunday 16:00 UTC (18:00 CEST); `workflow_dispatch` with a `since` input for manual runs,
+- collects the week, and only if there was activity runs the two-stage transform,
+- opens a pull request **against the `landing-page` (sporny.pl) repo** containing the rendered devlog entry (`content/devlog/YYYY-Wnn.md`) and the regenerated manifest — that PR is the editorial queue,
+- the social post and highlights go in the PR description (they are not site content),
+- `raw/` and `drafts/` are uploaded as workflow artifacts for audit — nothing intermediate is committed,
+- **merge = publish**: Cloudflare deploys the site on merge to `main`. The Action only *opens* the PR — it never merges, so a human always reviews and approves before anything goes live (human-in-the-loop preserved). To change a draft, edit the PR before merging.
+- secrets: `ANTHROPIC_API_KEY`; `GH_ACTIVITY_TOKEN` (fine-grained PAT, read-only contents/PRs/issues on the allowlisted repos); `LANDING_PAGE_TOKEN` (fine-grained PAT, write on the website repo — enough to push a branch and open a PR, not merge).
+
+The local `review` / `publish` commands remain for manual/offline operation; `publish --site-repo <path>` targets a checked-out copy of the website (used by CI).
 
 ## Tests (pytest)
 
