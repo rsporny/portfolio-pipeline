@@ -11,6 +11,8 @@ repos:
     midnightntwrk/midnight-node: >-
       Midnight blockchain node — a data-protection/privacy-focused network in
       the Cardano ecosystem, built on Substrate (Rust).
+memory:
+  root: memory/
 redaction:
   forbidden_phrases: []
 output:

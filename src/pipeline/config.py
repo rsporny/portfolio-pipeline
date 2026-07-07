@@ -33,6 +33,11 @@ class ContentConfig(BaseModel):
     devlog_title_prefix: str = "Senior SDET log"
 
 
+class MemoryConfig(BaseModel):
+    # Root of the committed thread registry (memory/{org}/{repo}/).
+    root: str = "memory/"
+
+
 class ReposConfig(BaseModel):
     allowlist: list[str]
     # Optional per-repo domain context, used to categorize and generalize the
@@ -55,6 +60,7 @@ class Config(BaseModel):
     anthropic: AnthropicConfig = AnthropicConfig()
     locale: LocaleConfig = LocaleConfig()
     content: ContentConfig = ContentConfig()
+    memory: MemoryConfig = MemoryConfig()
 
 
 def load_config(path: Path | str | None = None) -> Config:
