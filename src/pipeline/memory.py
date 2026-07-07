@@ -131,7 +131,9 @@ def apply_mutations(
         for change in update.assumption_updates:
             assumption = next((a for a in thread.assumptions if a.text == change.text), None)
             if assumption is None:
-                raise MemoryValidationError(f"assumption {change.text!r} not found on thread {update.id!r}")
+                raise MemoryValidationError(
+                    f"assumption {change.text!r} not found on thread {update.id!r}"
+                )
             assumption.status = change.status
         thread.assumptions.extend(a.model_copy(deep=True) for a in update.new_assumptions)
         thread.last_active_week = week  # touched this week

@@ -14,10 +14,10 @@ class GitHubError(RuntimeError):
 class GitHubClient:
     """Thin httpx wrapper over the GitHub REST API.
 
-    The token is read from the ``GITHUB_TOKEN`` environment variable (or passed
-    explicitly for tests) and only ever placed in the ``Authorization`` header —
-    never in a URL, log line, or exception message. Public repositories are
-    readable unauthenticated, so a missing token is not fatal.
+    The token is read from the ``GH_ACTIVITY_TOKEN`` environment variable (or
+    passed explicitly for tests) and only ever placed in the ``Authorization``
+    header — never in a URL, log line, or exception message. Public repositories
+    are readable unauthenticated, so a missing token is not fatal.
     """
 
     def __init__(
@@ -26,7 +26,7 @@ class GitHubClient:
         base_url: str = GITHUB_API,
         timeout: float = 30.0,
     ) -> None:
-        self._token = token if token is not None else os.environ.get("GITHUB_TOKEN")
+        self._token = token if token is not None else os.environ.get("GH_ACTIVITY_TOKEN")
         headers = {
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",

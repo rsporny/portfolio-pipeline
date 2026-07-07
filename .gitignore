@@ -9,10 +9,9 @@ build/
 .pytest_cache/
 .ruff_cache/
 
-# Generated content from local runs. The keep-files stay tracked so the dirs
-# exist; the weekly GitHub Action force-adds these to the editorial PR branch.
-raw/*
-!raw/.gitkeep
+# raw/ is committed since v0.2 — the versioned source of truth (audit &
+# reproducibility). memory/ is committed too. Local editorial working state is
+# not: keep-files hold the dirs; the content is ignored.
 drafts/*
 !drafts/.gitkeep
 approved/*

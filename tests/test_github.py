@@ -91,3 +91,18 @@ def test_error_response_raises_without_token(httpx_mock):
         client.get_commit("o/r", "deadbeef")
     assert "404" in str(excinfo.value)
     assert "secret-token" not in str(excinfo.value)
+
+
+# --- token from environment -------------------------------------------------
+
+
+def test_client_reads_token_from_gh_activity_token_env(monkeypatch):
+    monkeypatch.setenv("GH_ACTIVITY_TOKEN", "env-token")
+    client = GitHubClient(base_url=BASE)
+    assert client._client.headers["Authorization"] == "Bearer env-token"
+
+
+def test_client_is_unauthenticated_without_token(monkeypatch):
+    monkeypatch.delenv("GH_ACTIVITY_TOKEN", raising=False)
+    client = GitHubClient(base_url=BASE)
+    assert "Authorization" not in client._client.headers

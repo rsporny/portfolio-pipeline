@@ -37,7 +37,7 @@ jobs:
       - name: Collect activity
         env:
           # Fine-grained PAT: read-only contents/PRs/issues on the allowlisted repos.
-          GITHUB_TOKEN: ${{ secrets.GH_ACTIVITY_TOKEN }}
+          GH_ACTIVITY_TOKEN: ${{ secrets.GH_ACTIVITY_TOKEN }}
         run: |
           if [ -n "${{ github.event.inputs.since }}" ]; then
             uv run pipeline collect --since "${{ github.event.inputs.since }}"

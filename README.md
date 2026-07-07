@@ -65,7 +65,7 @@ uv sync
 $EDITOR config.yaml
 
 # 3. Secrets via environment only (never in code/config/logs)
-export GITHUB_TOKEN=github_pat_...      # fine-grained, read-only on allowlisted repos
+export GH_ACTIVITY_TOKEN=github_pat_... # fine-grained, read-only on allowlisted repos
 export ANTHROPIC_API_KEY=sk-ant-...
 
 # 4. Run
