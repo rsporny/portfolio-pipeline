@@ -2,9 +2,11 @@
 
 ## What this project is
 
-An automated "commit → content" pipeline: once a week it collects the owner's public development activity (commits, PRs from GitHub), then uses the Claude API in a two-stage process to turn it into content drafts: a titled, auto-numbered devlog entry, one channel-neutral English social post (the website owns per-platform share buttons), and a list of highlights worth revisiting later. The work is categorized and generalized for a broad engineering audience, and the devlog ends with a proof-of-work link. Drafts land in an editorial queue — a human always reviews and approves before anything is published.
+An automated "commit → content" pipeline: once a week it collects the owner's public development activity (commits, PRs, closed issues from GitHub) and uses the Claude API to turn it into content drafts — a titled, auto-numbered devlog entry, one channel-neutral English social post, and a list of highlights. Since v0.2 the pipeline has **memory**: it maintains a registry of work threads per organization/repository (`memory/{org}/{repo}/`), so weekly entries connect into longer arcs — features, assumptions, pivots — instead of isolated snapshots.
 
-This is a building-in-public project: a practical experiment in wiring AI into a real engineering workflow, with a human in the loop. The repo itself is the subject of its own first devlog entries. It is public and represents the owner's work — code quality, tests, and the README matter as much as the tool itself.
+Publishing is a pull request against the owner's website repo; **merge = publish** (Cloudflare deploys on merge). The pipeline never merges — a human always reviews first.
+
+This is a building-in-public project: a practical experiment in wiring AI into a real engineering workflow, with a human in the loop. The repo is public and represents the owner's work — code quality, tests, and the README matter as much as the tool itself. It is designed to be forkable: site-specific logic lives only in a small adapter.
 
 ## Owner and context
 
@@ -14,29 +16,31 @@ This is a building-in-public project: a practical experiment in wiring AI into a
 
 ## Hard constraints (NEVER violate)
 
-1. **Allowlist only:** the pipeline scans ONLY repositories explicitly listed in `config.yaml`. Default is deny. Only public/open-source repositories, or the owner's own private repositories, may be listed. Do not implement any exceptions or a "scan all" mode.
-2. **Human-in-the-loop:** no content is ever published automatically. The pipeline's job ends at generating drafts in `drafts/`. Publishing is a separate, manually invoked command that operates only on files in `approved/`.
-3. **Secrets:** environment variables only (`ANTHROPIC_API_KEY`, `GITHUB_TOKEN`). Never in code, config, or logs. The GitHub token is expected to be a fine-grained PAT with minimal scope; public repos are read without elevated permissions.
-4. **Data redaction:** before sending anything to the Claude API, run it through a redaction step (configurable list of forbidden phrases). Log what was redacted.
+1. **Allowlist only:** the pipeline scans ONLY repositories explicitly listed in `config.yaml`. Default is deny. Only public/open-source repositories, or the owner's own private repositories, may be listed. No exceptions, no "scan all" mode.
+2. **Human-in-the-loop:** the pipeline never publishes. CI only *opens* a PR against the website repo and never merges it. No code path may merge, auto-approve, or push to the website's main branch.
+3. **Content policy:** generated content is knowledge sharing — never a pitch. No calls to action, no service offers, no solicitation. Never quote or name third parties; their input may inform context only, and names are redacted by default. Claim only what the collected activity supports.
+4. **Secrets:** environment variables only (`ANTHROPIC_API_KEY`, `GH_ACTIVITY_TOKEN` read-only on allowlisted repos, `LANDING_PAGE_TOKEN` write-but-not-merge on the website repo). Never in code, config, or logs.
+5. **Redaction before every model call:** forbidden phrases masked, third-party names redacted; log what was redacted.
+6. **Model proposes, code disposes:** the indexer's memory mutations are applied deterministically by validated code — the model never writes files directly.
 
 ## Stack and conventions
 
 - Python 3.11+, dependency management: `uv` (fallback: pip + requirements.txt).
 - CLI: `typer`. HTTP: `httpx`. Claude: official `anthropic` SDK, model `claude-opus-4-8`.
-- Structure: `src/pipeline/` (package), `tests/` (pytest, mocked APIs — no real API calls in tests), `drafts/`, `approved/`, `published/`, `config.yaml`, `.github/workflows/weekly.yml`.
+- Structure: `src/pipeline/` (package), `src/pipeline/site_adapter/` (all site-specific logic), `tests/` (pytest, mocked APIs — no real API calls in tests), `raw/` (committed activity snapshots), `memory/` (committed thread registry), `config.yaml`, `.github/workflows/weekly.yml`.
 - Full type hints, `ruff` as linter/formatter.
-- Commits: conventional commits, in English.
+- Commits: conventional commits, in English. CI bot commits (raw, memory) clearly labeled.
 - Write tests alongside code, not after. This repo is public and its author is an SDET — the tests are part of the story it tells.
 
 ## Commands
 
 - `uv run pipeline collect` — fetch activity from the last 7 days (or `--since`)
-- `uv run pipeline transform` — two-stage AI transformation, writes drafts
+- `uv run pipeline transform` — Stage A → indexer → Stage B, writes drafts and memory updates
 - `uv run pipeline run` — collect + transform
-- `uv run pipeline review` — list drafts awaiting editorial review
-- `uv run pipeline publish` — copy approved files into the website repo (manual)
+- `uv run pipeline review` — list drafts awaiting review (local/offline flow)
+- `uv run pipeline publish --site-repo <path>` — render via the site adapter into a website checkout (used by CI and locally)
 - `uv run pytest` — tests
 
 ## Detailed specification
 
-See `SPEC.md` in the repo root.
+See `SPEC.md` in the repo root. Do not implement roadmap items (v0.3+) ahead of schedule.

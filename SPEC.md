@@ -1,36 +1,51 @@
-# SPEC.md — portfolio-pipeline: MVP functional specification
+# SPEC.md — portfolio-pipeline v0.2: functional specification
 
 ## Goal
 
-Once a week, turn real development work into content drafts (a titled devlog, one channel-neutral social post, highlights), with a human in the loop. Owner's weekly cost: ≤30 min of editing.
+Once a week, turn real development work into content drafts (a titled devlog entry, one channel-neutral social post, highlights) with a human in the loop — and, new in v0.2, with **memory**: the pipeline tracks ongoing threads of work per organization/repository, so entries connect into larger arcs (how a feature evolved, what was assumed, what pivoted) instead of being isolated weekly snapshots.
+
+Owner's weekly cost: ≤30 min of PR review.
+
+## Content policy (applies to every generated artifact)
+
+This project produces knowledge-sharing content: "what I built and what I learned." All generated content MUST:
+- be written first person, concrete, engineering-minded, curious rather than promotional;
+- contain no calls to action, no offers of services, no availability announcements, and no solicitation of any kind;
+- present only the owner's own perspective; input from other people (review comments, discussions) may inform understanding but is never quoted or attributed — third-party names are redacted by default;
+- claim only what is supported by the collected activity (no invented metrics, no embellished outcomes).
+
+These rules are part of the Stage B prompt and must also be enforced structurally where possible (see redaction; automated checks arrive in v0.4).
+
+Content language and format (decided in v0.1, retained): the devlog and social post are written in **English**; there is a single, channel-neutral **social** post (the website owns per-platform share buttons). The work is categorized and generalized for a broad engineering audience, and the devlog ends with a proof-of-work link.
 
 ## Data flow
 
 ```
-collect ──► raw/YYYY-Wnn/activity.json
-transform ──► stage A (technical summary) ──► stage B (writing)
-          ──► drafts/YYYY-Wnn/{devlog.md, social.md, highlights.md, summary-tech.md (+ summary-tech.json)}
-[human edits, moves files to approved/]
-publish ──► copies approved/* into a local clone of the sporny.pl website repo (path in config)
+collect ──► raw/YYYY-Wnn/activity.json          (committed to this repo — audit & reproducibility)
+transform:
+  stage A (technical summary, memory-aware)
+  indexer (updates memory/ threads)             (committed to this repo by CI)
+  stage B (writing, thread-aware)
+publish (CI):
+  site_adapter renders entry + site manifest
+  PR opened against the landing-page repo       (merge = publish via Cloudflare)
+  social post + highlights in the PR description
 ```
 
-Content is written for a broad engineering audience (readers who don't know the
-specific repos): the work is categorized and generalized, and the devlog ends
-with a proof-of-work link. Social output is one channel-neutral English post;
-the website owns the per-platform (LinkedIn / X / …) share buttons.
+The local flow remains: `transform` writes `drafts/`, `review` lists them, and `publish --site-repo <path>` renders into a website checkout through the same adapter the CI uses.
 
 ## Module 1: Collector
 
-Source: GitHub REST API (token from env `GITHUB_TOKEN`; a fine-grained PAT with minimal scope — public repositories are readable without elevated permissions).
+Source: GitHub REST API (token from env `GH_ACTIVITY_TOKEN`; fine-grained PAT, read-only contents/PRs/issues on the allowlisted repos — public repositories are readable without elevated permissions).
 
 For each repo on the allowlist in `config.yaml`, fetch within the given time window (default 7 days, override with `--since` / `--until`):
-- commits authored by the configured user (`github_user: rsporny`): sha, date, message, `url`, list of changed files with stats (no diff contents in the MVP — token economy; `include_diffs: false` config flag reserved for the future),
+- commits authored by the configured user (`github_user: rsporny`): sha, date, message, `url`, changed files with stats (no diff contents — `include_diffs: false` reserved for a future version),
 - PRs created by the user: title, description, labels, status, `url`,
 - issues assigned to the user and closed in the window: title, description, `url`.
 
 The `url` (GitHub `html_url`) is captured so drafts can cite proof of work.
 
-Output: `raw/YYYY-Wnn/activity.json` (versioned schema, currently `schema_version: 2`). If there is no activity — write an empty file and exit with an informational message, not an error.
+Output: `raw/YYYY-Wnn/activity.json` (versioned schema, currently `schema_version: 2`), **committed to this repository**. Raw activity is the pipeline's source of truth: it makes every published entry reproducible and auditable. If there is no activity — write an empty file and exit with an informational message (no transform, no PR).
 
 ### Config (`config.yaml`)
 
@@ -41,13 +56,17 @@ repos:
     - rsporny/portfolio-pipeline
     # public/open-source repos the owner contributes to,
     # or the owner's own private repos — nothing else
-  descriptions:                        # optional per-repo domain context
+  descriptions:                        # optional per-repo domain context (categorization)
     rsporny/portfolio-pipeline: "Commit→content pipeline (Python)."
+memory:
+  root: memory/
 redaction:
   forbidden_phrases: []
-output:
-  site_repo_path: ~/code/sporny.pl   # target of the publish command
-  site_devlog_dir: content/devlog
+  redact_third_party_names: true
+site:
+  repo: rsporny/landing-page          # PR target (owner/name)
+  devlog_dir: content/devlog
+  adapter: sporny_pl                  # site-specific rendering lives ONLY in the adapter
 anthropic:
   model: claude-opus-4-8
   max_tokens: 4000
@@ -57,76 +76,134 @@ content:
   devlog_title_prefix: Senior SDET log   # devlog title becomes "<prefix> #N: …"
 ```
 
-## Module 2: Transformer (two-stage)
+## Module 2: Memory
 
-Step 0 — redaction: remove/mask phrases from `redaction.forbidden_phrases` in the input data, log the number of maskings.
+Purpose: connect weekly activity into longer arcs. Memory is plain files in this repository — transparent, reviewable, versioned.
 
-### Stage A — technical summary
+Layout (nested org → repo):
 
-Prompt (parameterized with `activity.json` data **and** the repo descriptions
-from config, so the work can be categorized and generalized). Per initiative:
-`name`, `category` (a domain label a general engineer recognizes), `what`,
-`why_it_matters`, `tech`, and `links` (commit/PR URLs = proof of work). Expected
-JSON: `{"initiatives": [{"name", "category", "what", "why_it_matters", "tech": [], "links": []}]}`.
+```
+memory/
+  {org}/
+    {repo}/
+      context.md      # hand-written, updated rarely by the owner
+      threads.yaml    # machine-maintained by the indexer
+```
 
-Output: `drafts/YYYY-Wnn/summary-tech.md` (rendered from JSON) + `summary-tech.json` (the raw JSON) next to it.
+`context.md` — a short human-written card: what the project is, the stack, the owner's role, anything the model can't infer from commits. Never modified by the pipeline.
 
-### Stage B — writing
+`threads.yaml` — schema:
 
-Input: JSON from stage A. The prompt targets a broad engineering audience that
-does not know the specific repos, and produces:
+```yaml
+threads:
+  - id: kebab-case-stable-id
+    title: "Human-readable thread name"
+    status: ongoing | pivoted | done
+    started_week: 2026-W27
+    last_active_week: 2026-W29
+    summary: "2–4 sentences: what this thread is about and where it stands."
+    assumptions:
+      - text: "Skipping diff contents will be sufficient for good summaries."
+        made_week: 2026-W27
+        status: open | confirmed | falsified
+        review_by: 2026-W31        # optional; code flags overdue reviews
+    key_decisions:
+      - week: 2026-W28
+        decision: "One anchor per week (merkle root) instead of per-entry."
+        rationale: "Cost and simplicity."
+```
 
-1. `title` — an auto-numbered devlog title `"<content.devlog_title_prefix> #N: <subtitle>"`, where N = (devlogs already in `published/`) + 1.
-2. `devlog` (English, 350–550 words) — opens with generalized context (what domain, why a general engineer should care), explains the work without assuming repo knowledge (a short example/analogy where it helps), follows problem → decision → outcome, and ends with a proof-of-work link.
-3. `social` (100–180 words, English) — one channel-neutral post (hook first line, one concrete lesson, ≤3 hashtags, no CTA) that draws the reader to the full devlog. The website owns per-platform share buttons.
-4. `highlights` — notable items worth revisiting, one sentence each, tagged with the initiative name.
+The `assumptions` block is a lightweight decision journal: explicit, dated, revisited. Falsified assumptions are content gold — Stage B is told about them.
+
+**Model proposes, code disposes.** The indexer (below) proposes mutations as JSON; validated code applies them deterministically to `threads.yaml` and rejects anything malformed. The model never writes files. Review-due assumptions are computed by code from `review_by <= current week`, not taken from the model.
+
+## Module 3: Transformer (three steps)
+
+Step 0 — redaction: mask phrases from `redaction.forbidden_phrases` in all input data; when `redact_third_party_names` is true, replace GitHub logins/names other than `github_user` with role placeholders (e.g., `[reviewer]`). Log what was redacted. Runs before every model call.
+
+### Stage A — technical summary (memory-aware)
+
+Input: `activity.json` + the repo `descriptions` from config + `context.md` and current `threads.yaml` for each repo with activity. Group the week's work into 2–5 initiatives. Per initiative: `name`, `category` (a domain label a general engineer recognizes), `what` (3–5 technical sentences, English), `why_it_matters`, `tech`, `links` (commit/PR URLs = proof of work), and — if it plausibly continues or affects a known thread — a `thread_ref` (`{id, relation}` where relation ∈ continues | pivots | concludes | contradicts). Cosmetic commits are ignored unless they add up to something.
+
+Expected JSON: `{"initiatives": [{"name", "category", "what", "why_it_matters", "tech": [], "links": [], "thread_ref": {"id", "relation"} | null}]}`.
+
+Output: `drafts/YYYY-Wnn/summary-tech.md` (rendered) + `summary-tech.json` (raw). The durable record is `raw/` + memory; drafts are ephemeral.
+
+### Indexer — memory update
+
+Input: Stage A JSON + current `threads.yaml`. A second model call proposes memory mutations; **code applies them deterministically and validates the schema** (the model never writes files). The model proposes which threads to update (summary, status, assumption status changes, new assumptions) and which new threads to create (only for work that clearly starts something ongoing — one-off chores do not become threads). Be conservative: fewer, well-maintained threads beat many stale ones.
+
+Expected JSON: `{"updates": [...], "new_threads": [...]}`. Code stamps `last_active_week`/`started_week` from the run's week, then computes `reviews_due` (open assumptions whose `review_by <= week`) to pass to Stage B.
+
+CI commits the resulting `memory/` changes to this repository's main branch as a clearly labeled bot commit (derived, regenerable state — acceptable without PR). Locally, `pipeline transform` applies them to the working tree. An indexer failure must not block Stage B — fall back to the previous memory and log a warning.
+
+### Stage B — writing (thread-aware)
+
+Input: Stage A JSON + updated thread data for referenced threads + `reviews_due`. The prompt carries the content policy (knowledge sharing, no CTAs/offers/solicitation, never name third parties, claim only what the activity supports) and the thread context (some initiatives continue longer arcs, some contradict earlier assumptions, some assumptions are due for review — weave this in: refer back to when a thread started, what was assumed, what changed; continuity over novelty).
+
+Produces:
+1. `title` — an auto-numbered devlog title `"<content.devlog_title_prefix> #N: <subtitle>"`, where N = (devlogs already in the site) + 1.
+2. `devlog` (English, 350–550 words) — opens with generalized context, explains the work without assuming repo knowledge (a short example/analogy where it helps), follows problem → decision → outcome with thread continuity where it exists, and ends with a proof-of-work link.
+3. `social` (100–180 words, English) — one channel-neutral post (hook first line, one concrete lesson, ≤3 hashtags, no CTA) that draws the reader to the full devlog.
+4. `highlights` — notable items worth revisiting, one sentence each, tagged with the initiative/thread.
 
 Respond ONLY with JSON: `{"title", "devlog", "social", "highlights": []}`.
 
 Output: `devlog.md`, `social.md`, `highlights.md` in `drafts/YYYY-Wnn/`, each with front matter (`title`, `status: draft`, `week`, `generated_at`, `source_initiatives`).
 
-Error handling: retry with backoff (3 attempts) on API errors; JSON validation (strip ```json fences); on failure, save the raw response to `drafts/YYYY-Wnn/_failed_raw.txt` and exit with a clear error.
+Error handling (all model calls): retry with backoff (3 attempts); JSON validation (strip ```json fences); on failure, save the raw response (workflow artifact / `_failed_raw.txt` locally) and exit with a clear error.
 
-## Module 3: Review and Publish
+## Module 4: Site adapter and publishing
 
-- `pipeline review`: a table of drafts (week, file, status) based on front matter; the human changes status by moving the file to `approved/YYYY-Wnn/` and editing the content freely.
-- `pipeline publish`: copies files from `approved/` to `output.site_repo_path/output.site_devlog_dir`, sets `status: published`, moves them locally to `published/`. It does NOT commit and does NOT push the website repo — that stays deliberately manual.
+All knowledge about the landing page lives in ONE module: `src/pipeline/site_adapter/sporny_pl.py`, implementing a small interface:
 
-## Module 4: Automation
+```
+render(entry, metadata) -> list[FileChange]   # devlog markdown + regenerated site manifest
+```
+
+The pipeline core knows only the interface. Supporting another site = writing another adapter. No site-specific logic anywhere else. `publish` (local and CI, via `--site-repo`) resolves the adapter named in `site.adapter`, calls `render`, and writes the resulting `FileChange`s into the website checkout — it never commits or pushes the website repo.
+
+## Module 5: Automation (CI)
 
 GitHub Actions `.github/workflows/weekly.yml`:
 - cron: Sunday 16:00 UTC (18:00 CEST); `workflow_dispatch` with a `since` input for manual runs,
-- collects the week, and only if there was activity runs the two-stage transform,
-- opens a pull request **against the `landing-page` (sporny.pl) repo** containing the rendered devlog entry (`content/devlog/YYYY-Wnn.md`) and the regenerated manifest — that PR is the editorial queue,
+- collects the week, and only if there was activity runs the transform (Stage A → indexer → Stage B),
+- commits `raw/YYYY-Wnn/activity.json` and `memory/` updates to this repo (clearly labeled bot commits),
+- opens a pull request **against the landing-page (sporny.pl) repo** containing the rendered devlog entry (`content/devlog/YYYY-Wnn.md`) and the regenerated manifest, on branch `devlog/YYYY-Wnn` (re-runs for the same week update the same branch — one PR per week),
 - the social post and highlights go in the PR description (they are not site content),
-- `raw/` and `drafts/` are uploaded as workflow artifacts for audit — nothing intermediate is committed,
-- **merge = publish**: Cloudflare deploys the site on merge to `main`. The Action only *opens* the PR — it never merges, so a human always reviews and approves before anything goes live (human-in-the-loop preserved). To change a draft, edit the PR before merging.
+- intermediate drafts and raw model responses are uploaded as workflow artifacts for short-term debugging (artifacts expire ≤90 days — which is why `raw/` and `memory/` are committed),
+- **merge = publish**: Cloudflare deploys the site on merge to `main`. The Action only *opens* the PR — it never merges; a human always reviews, edits the PR if needed, and approves before anything goes live,
 - secrets: `ANTHROPIC_API_KEY`; `GH_ACTIVITY_TOKEN` (fine-grained PAT, read-only contents/PRs/issues on the allowlisted repos); `LANDING_PAGE_TOKEN` (fine-grained PAT, write on the website repo — enough to push a branch and open a PR, not merge).
 
-The local `review` / `publish` commands remain for manual/offline operation; `publish --site-repo <path>` targets a checked-out copy of the website (used by CI).
+The local `review` / `publish` commands remain for manual/offline operation; `publish --site-repo <path>` targets a checked-out copy of the website through the same code path.
 
 ## Tests (pytest)
 
-- collector: parsing GitHub API responses (fixtures with sample JSON), filtering by author and time window, allowlist enforcement (repo not on the list → skipped + warning).
-- redaction: phrase masking, case-insensitive.
-- transformer: validating/parsing model responses (valid JSON, JSON in fences, broken JSON → failure path), retry logic (mocked).
-- review/publish: file operations in tmp_path, front-matter round-trip.
+- collector: GitHub API response parsing (fixtures), author/time-window filtering, allowlist enforcement (repo not listed → skipped + warning).
+- redaction: forbidden phrases + third-party name redaction, case-insensitive.
+- memory: threads.yaml schema validation, deterministic application of indexer mutations, rejection of invalid mutations, assumption review-due computation.
+- transformer: model-response parsing (valid JSON / fenced / broken → failure path), retry logic (mocked), indexer-failure fallback.
+- site adapter: entry + manifest rendering golden tests.
+- publish: file operations in tmp_path; CI path and local path share the code under test.
 - Zero real network calls in tests.
 
 ## README.md
 
-This is a public, building-in-public repo. The README must include: a data-flow diagram, the human-in-the-loop philosophy, a section explaining the allowlist-only design (why the pipeline deliberately reads only explicitly listed public repos), a quickstart, and a sample draft. Framing: a personal experiment in AI-assisted engineering workflows — a tool anyone can fork to automate their own devlog. Language: English.
+Public, building-in-public repo. Must include: data-flow diagram, the human-in-the-loop philosophy (merge = publish), the memory design (threads, assumptions as a decision journal), why allowlist-only, the adapter architecture ("fork it, write an adapter for your own site"), quickstart, sample entry. Language: English.
 
-## Out of scope for the MVP (do not implement now)
+## Roadmap (do not implement ahead of schedule)
 
-- Diff content analysis, voice notes as a source, long-form article generator, auto-push to the website repo, web dashboard, multi-user support.
+- **v0.3** — selective deep context: review comments and linked/parent/child issues fetched only for PRs belonging to active threads; third-party input used for understanding only, never quoted (policy above already applies).
+- **v0.4** — eval suite for the transformer: golden examples, property assertions (valid JSON, content-policy compliance, word limits, faithfulness to activity), run in CI on every prompt/model change, results published.
+- **v0.5** — provenance: signed entries + weekly hash anchoring (merkle root) on Cardano.
+- **v1.0** — experiment: ZK-based verifiable claims about private activity (Midnight).
 
-## Implementation order (milestones)
+## Implementation order for v0.2 (milestones)
 
-1. Project skeleton: structure, config loader, CLI, CI with ruff + pytest.
-2. Collector + tests (mocked GitHub API).
-3. Transformer stage A + B + redaction + tests.
-4. Review + publish + tests.
-5. GitHub Actions workflow + README.
+1. Memory module: schema, loader/validator, deterministic mutation application + tests.
+2. Collector change: commit `raw/` (schema unchanged) + tests.
+3. Transformer: memory-aware Stage A, indexer, thread-aware Stage B + tests.
+4. Site adapter extraction (`sporny_pl`) + golden tests.
+5. CI workflow: cross-repo PR flow, bot commits, artifacts + README update.
 
 After each milestone: a working state, green tests, a commit.
