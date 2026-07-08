@@ -104,6 +104,31 @@ holding under fault injection. PR: https://github.com/midnightntwrk/midnight-nod
 The work is categorized and generalized for a broad audience, and each thread
 ends with a proof-of-work link.
 
+## Devlog manifest
+
+On every publish the pipeline regenerates `content/devlog/index.json` in the
+website repo — the list the devlog page reads. It scans every front-mattered
+`.md` in the devlog dir and emits one entry each:
+
+```json
+{
+  "type": "weekly-activity",     // or "custom" for hand-written notes/essays
+  "series": "Senior SDET log",   // role identity, emitted per entry
+  "n": 1,                        // per-series number, shared by weekly + custom, frozen once set
+  "slug": "2026-W27",            // = the .md filename, and the page #hash anchor
+  "title": "Senior SDET log #1: turning panics into exit codes, …",
+  "date": "2026-07-05"           // drives ordering + the "Published" line
+}
+```
+
+Entries order by `date`, so hand-written **custom** entries interleave with the
+weekly ones. `n` is a single per-series sequence across both types and is frozen
+once assigned (re-runs never renumber). Custom entries are authored by hand in
+the website repo and are never written or deleted by the pipeline; one is only
+listed once it has `status: published`. See
+[SPEC.md → Module 4](SPEC.md#manifest-schema-contentdevlogindexjson-owned-by-the-website)
+for the full schema and how to author a custom entry.
+
 ## Stack
 
 Python 3.11+, [`uv`](https://docs.astral.sh/uv/), `typer` (CLI), `httpx`

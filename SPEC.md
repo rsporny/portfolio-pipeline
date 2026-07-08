@@ -163,6 +163,46 @@ render(entry, metadata) -> list[FileChange]   # devlog markdown + regenerated si
 
 The pipeline core knows only the interface. Supporting another site = writing another adapter. No site-specific logic anywhere else. `publish` (local and CI, via `--site-repo`) resolves the adapter named in `site.adapter`, calls `render`, and writes the resulting `FileChange`s into the website checkout — it never commits or pushes the website repo.
 
+### Manifest schema (`content/devlog/index.json`, owned by the website)
+
+`write_manifest` rebuilds the manifest from **every** front-mattered `.md` in the devlog dir, ordered by `date` (newest first) so weekly and custom entries interleave chronologically. Each entry has:
+
+| field    | source                                        | notes |
+|----------|-----------------------------------------------|-------|
+| `type`   | front matter `type`, default `weekly-activity`| `weekly-activity` (pipeline-generated) or `custom` (hand-authored) |
+| `series` | see below                                     | role identity, e.g. `Senior SDET log` — emitted **per entry** |
+| `n`      | see below                                     | per-series sequence number, **frozen once assigned** |
+| `slug`   | the `.md` filename without extension          | the entry id and page `#hash` anchor (renamed from the old `week` key) |
+| `title`  | front matter `title`                          | customs use it verbatim as the heading; weeklies keep their `#N` title |
+| `date`   | `published_at` (fallback `generated_at`)      | drives ordering and the "Published" line |
+| `kind`   | front matter `kind` (custom only, optional)   | kicker label; omitted ⇒ the page defaults to `Note` |
+
+**`series` per entry.** Weeklies emit the caller's configured current series (`content.devlog_title_prefix`); customs carry their own `series` in front matter. An entry's own recorded series — front matter, or a value already in the prior manifest — always wins, so history is **never rewritten** when the owner's role/series changes.
+
+**`n` is one per-series sequence spanning weekly *and* custom entries**, frozen once assigned. Resolution order: reuse the value already in the prior manifest → else front matter `n` → else backfill from a legacy `#N` weekly title → else assign `max(n in that series) + 1` (walking entries oldest-first so assignment is deterministic). Because assigned values are read back from the prior manifest on the next run, numbers are idempotent across re-runs and never renumber when a backdated entry appears. A new series restarts its own sequence at 1.
+
+**Custom entries** are authored by hand directly in the website repo (see "Authoring a custom entry" below) and are **not** part of this pipeline's `raw/` → `transform` → `published/` flow. `write_manifest` never writes or deletes a custom `.md`; it maps front matter → manifest per the table and **skips any custom lacking `status: published`**.
+
+### Authoring a custom entry (hand-written notes/essays)
+
+Custom entries live only in the **website repo**, never in this pipeline. To publish one:
+
+1. Add `content/devlog/<slug>.md` in the website repo (the filename is the `slug` and the page anchor — choose it deliberately, e.g. `looking-ahead-2036.md`).
+2. Give it front matter:
+   ```yaml
+   ---
+   type: custom
+   series: Senior SDET log      # same string as the weekly series it shares a sequence with
+   n: 2                         # per-series number; pick the next free one (shared with weeklies)
+   slug: looking-ahead-2036     # = filename without .md
+   title: "Looking ahead: SDET role in the age of AI"   # used verbatim as the heading
+   published_at: 2026-07-07     # drives ordering + the "Published" date
+   status: published            # omit/anything else ⇒ excluded from the manifest (safe drafting)
+   kind: Essay                  # optional kicker; omit ⇒ the page shows "Note"
+   ---
+   ```
+3. Open a PR against the website repo. On the next weekly run (or any `publish`), `write_manifest` regenerates `index.json` and folds the entry in; drafts (no `status: published`) stay invisible until you flip the flag. Once `n` lands in the manifest it is frozen — don't renumber existing entries.
+
 ## Module 5: Automation (CI)
 
 GitHub Actions `.github/workflows/weekly.yml`:

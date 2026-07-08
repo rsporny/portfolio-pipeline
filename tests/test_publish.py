@@ -6,7 +6,7 @@ import pytest
 
 from pipeline.config import Config, OutputConfig, ReposConfig
 from pipeline.frontmatter import dump, parse
-from pipeline.publish import PublishError, publish_approved
+from pipeline.publish import PublishError, publish_approved, write_manifest
 
 
 def _config(site_repo, devlog_dir="content/devlog"):
@@ -74,11 +74,192 @@ def test_publish_writes_site_manifest(tmp_path):
     manifest = site / "content/devlog" / "index.json"
     assert manifest.exists()
     entries = json.loads(manifest.read_text())
-    assert entries[0]["week"] == week
+    # `slug` replaced the old `week` key.
+    assert entries[0]["slug"] == week
+    assert "week" not in entries[0]
     assert entries[0]["title"] == "Log #1"
+    # GitHub-derived entries default to the weekly-activity type.
+    assert entries[0]["type"] == "weekly-activity"
+    # The configured series is emitted per entry.
+    assert entries[0]["series"] == "Senior SDET log"
     # publish stamps a publication date (YYYY-MM-DD) that the manifest carries
     assert entries[0]["date"]
     assert "published_at" in parse((published / week / "devlog.md").read_text())[0]
+
+
+def _weekly(site_dir, slug, title, date, **extra):
+    (site_dir / f"{slug}.md").write_text(
+        dump({"title": title, "week": slug, "published_at": date, **extra}, "weekly")
+    )
+
+
+def _custom(site_dir, slug, title, date, *, status="published", **extra):
+    (site_dir / f"{slug}.md").write_text(
+        dump(
+            {
+                "type": "custom",
+                "title": title,
+                "slug": slug,
+                "published_at": date,
+                "status": status,
+                **extra,
+            },
+            "essay",
+        )
+    )
+
+
+def test_write_manifest_new_schema_and_ordering(tmp_path):
+    """Every entry carries series/n/slug (no `week`), and entries order by date
+    so custom entries interleave with weekly ones."""
+    site_dir = tmp_path / "content/devlog"
+    site_dir.mkdir(parents=True)
+    _weekly(site_dir, "2026-W27", "Senior SDET log #1: exit codes", "2026-07-05")
+    _custom(
+        site_dir,
+        "looking-ahead-2036",
+        "Looking ahead: the SDET role in 2036",
+        "2026-07-10",
+        series="Senior SDET log",
+        n=2,
+        kind="Essay",
+    )
+
+    write_manifest(site_dir, "Senior SDET log")
+    entries = json.loads((site_dir / "index.json").read_text())
+
+    assert all({"type", "series", "n", "slug"} <= e.keys() for e in entries)
+    assert all("week" not in e for e in entries)
+    # Newest by date first — the custom entry (2026-07-10) leads the weekly one.
+    assert [e["slug"] for e in entries] == ["looking-ahead-2036", "2026-W27"]
+    by_slug = {e["slug"]: e for e in entries}
+    assert by_slug["looking-ahead-2036"]["type"] == "custom"
+    assert by_slug["looking-ahead-2036"]["kind"] == "Essay"
+    assert by_slug["2026-W27"]["type"] == "weekly-activity"
+    # Custom carries its own n; weekly n backfills from the legacy "#1" title.
+    assert by_slug["looking-ahead-2036"]["n"] == 2
+    assert by_slug["2026-W27"]["n"] == 1
+
+
+def test_write_manifest_series_emitted_and_frozen(tmp_path):
+    """Weeklies get the configured current series; an entry's own recorded
+    series (front matter / prior manifest) is never rewritten."""
+    site_dir = tmp_path / "content/devlog"
+    site_dir.mkdir(parents=True)
+    # Historical weekly with no series recorded, and one that already has one.
+    _weekly(site_dir, "2026-W27", "Senior SDET log #1: exit codes", "2026-07-05")
+    _weekly(
+        site_dir,
+        "2026-W20",
+        "Junior tester log #1: fixtures",
+        "2026-05-18",
+        series="Junior tester log",
+    )
+
+    write_manifest(site_dir, "Senior SDET log")
+    by_slug = {e["slug"]: e for e in json.loads((site_dir / "index.json").read_text())}
+
+    # Configured current series for the entry that had none...
+    assert by_slug["2026-W27"]["series"] == "Senior SDET log"
+    # ...but the entry with its own series keeps it even under a new config.
+    assert by_slug["2026-W20"]["series"] == "Junior tester log"
+
+    # Rewrite under a *changed* config: recorded series stay put (frozen).
+    write_manifest(site_dir, "Principal SDET log")
+    by_slug = {e["slug"]: e for e in json.loads((site_dir / "index.json").read_text())}
+    assert by_slug["2026-W27"]["series"] == "Senior SDET log"
+    assert by_slug["2026-W20"]["series"] == "Junior tester log"
+
+
+def test_write_manifest_assigns_n_max_plus_one_across_types(tmp_path):
+    """`n` is one per-series sequence across weekly + custom: a bare-title
+    weekly and a custom without `n` each take max(series n) + 1."""
+    site_dir = tmp_path / "content/devlog"
+    site_dir.mkdir(parents=True)
+    # n=1 recoverable from the title; n=2 from front matter; two need assigning.
+    _weekly(site_dir, "2026-W27", "Senior SDET log #1: exit codes", "2026-07-05")
+    _custom(site_dir, "looking-ahead", "Looking ahead", "2026-07-10", series="Senior SDET log", n=2)
+    _weekly(site_dir, "2026-W28", "no number here", "2026-07-12")  # bare subtitle
+    _custom(site_dir, "a-note", "A note", "2026-07-14", series="Senior SDET log")  # no n
+
+    write_manifest(site_dir, "Senior SDET log")
+    by_slug = {e["slug"]: e for e in json.loads((site_dir / "index.json").read_text())}
+
+    ns = sorted(e["n"] for e in by_slug.values())
+    assert ns == [1, 2, 3, 4]  # a single dense sequence, no gaps or duplicates
+    assert by_slug["2026-W28"]["n"] == 3  # oldest of the two unnumbered → 3
+    assert by_slug["a-note"]["n"] == 4
+
+
+def test_write_manifest_n_frozen_across_reruns(tmp_path):
+    """Assigned `n` values are stable across repeated runs (idempotent) even
+    when a newer, earlier-dated entry appears later."""
+    site_dir = tmp_path / "content/devlog"
+    site_dir.mkdir(parents=True)
+    _weekly(site_dir, "2026-W28", "no number", "2026-07-12")
+    write_manifest(site_dir, "Senior SDET log")
+    first = {e["slug"]: e["n"] for e in json.loads((site_dir / "index.json").read_text())}
+    assert first == {"2026-W28": 1}
+
+    # A backdated entry shows up; the already-assigned n must not be renumbered.
+    _weekly(site_dir, "2026-W20", "older week", "2026-05-18")
+    write_manifest(site_dir, "Senior SDET log")
+    second = {e["slug"]: e["n"] for e in json.loads((site_dir / "index.json").read_text())}
+    assert second["2026-W28"] == 1  # frozen despite now being the newer entry
+    assert second["2026-W20"] == 2
+
+    # A third run changes nothing.
+    write_manifest(site_dir, "Senior SDET log")
+    third = {e["slug"]: e["n"] for e in json.loads((site_dir / "index.json").read_text())}
+    assert third == second
+
+
+def test_write_manifest_custom_contract(tmp_path):
+    """Custom `.md` files are preserved on disk, mapped per the contract, and
+    excluded when not `status: published`."""
+    site_dir = tmp_path / "content/devlog"
+    site_dir.mkdir(parents=True)
+    _custom(
+        site_dir,
+        "looking-ahead-2036",
+        "Looking ahead: the SDET role in 2036",
+        "2026-07-10",
+        series="Senior SDET log",
+        n=2,
+        kind="Essay",
+    )
+    _custom(site_dir, "wip-thoughts", "WIP", "2026-07-20", status="draft", n=9)
+    disk_before = (site_dir / "looking-ahead-2036.md").read_text()
+
+    write_manifest(site_dir, "Senior SDET log")
+    entries = json.loads((site_dir / "index.json").read_text())
+
+    # The draft custom is excluded; the published one maps field-for-field.
+    assert [e["slug"] for e in entries] == ["looking-ahead-2036"]
+    entry = entries[0]
+    assert entry == {
+        "type": "custom",
+        "series": "Senior SDET log",
+        "n": 2,
+        "slug": "looking-ahead-2036",
+        "title": "Looking ahead: the SDET role in 2036",
+        "date": "2026-07-10",
+        "kind": "Essay",
+    }
+    # Hand-authored files are never rewritten or deleted.
+    assert (site_dir / "looking-ahead-2036.md").read_text() == disk_before
+    assert (site_dir / "wip-thoughts.md").exists()
+
+
+def test_write_manifest_custom_kind_defaults_to_omitted(tmp_path):
+    """`kind` is passed through only when present (the page defaults to Note)."""
+    site_dir = tmp_path / "content/devlog"
+    site_dir.mkdir(parents=True)
+    _custom(site_dir, "a-note", "A note", "2026-07-14", series="Senior SDET log", n=1)
+
+    write_manifest(site_dir, "Senior SDET log")
+    entry = json.loads((site_dir / "index.json").read_text())[0]
+    assert "kind" not in entry
 
 
 def test_publish_site_repo_override(tmp_path):
