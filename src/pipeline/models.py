@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -124,6 +125,17 @@ class Activity(BaseModel):
 # --- Transformer output schemas ---------------------------------------------
 
 
+# How this week's work relates to a known thread (Stage A memory-awareness).
+ThreadRelation = Literal["continues", "pivots", "concludes", "contradicts"]
+
+
+class ThreadRef(BaseModel):
+    """A Stage A initiative's link back to a known work thread."""
+
+    id: str
+    relation: ThreadRelation
+
+
 class Initiative(BaseModel):
     """One unit of work from the Stage A technical summary."""
 
@@ -133,6 +145,8 @@ class Initiative(BaseModel):
     why_it_matters: str
     tech: list[str] = Field(default_factory=list)
     links: list[str] = Field(default_factory=list)
+    # Set when this initiative plausibly continues/affects a known thread.
+    thread_ref: ThreadRef | None = None
 
 
 class Initiatives(BaseModel):

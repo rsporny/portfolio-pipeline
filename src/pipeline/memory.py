@@ -29,8 +29,9 @@ class Thread(BaseModel):
     id: str
     title: str
     status: ThreadStatus = "ongoing"
-    started_week: str
-    last_active_week: str
+    # Stamped by apply_mutations for new threads; the indexer model may omit them.
+    started_week: str = ""
+    last_active_week: str = ""
     summary: str = ""
     assumptions: list[Assumption] = Field(default_factory=list)
     key_decisions: list[KeyDecision] = Field(default_factory=list)
