@@ -125,7 +125,7 @@ website repo — the list the devlog page reads. It scans every front-mattered
 
 Entries order by `date`, so hand-written **custom** entries interleave with the
 weekly ones. **Numbering is the pipeline's job:** `n` is a single per-series
-sequence across both types, assigned by `write_manifest` and frozen once set
+sequence across both types, assigned by the site adapter and frozen once set
 (re-runs never renumber). Weekly titles are a bare subtitle — the site renders
 `Senior SDET log #<n>: <subtitle>` — so nothing hand-bakes a number.
 
@@ -142,6 +142,23 @@ repo (front matter, `type: custom`, the next series number) and regenerates
 like the weekly PR. See
 [SPEC.md → Module 4](SPEC.md#manifest-schema-contentdevlogindexjson-owned-by-the-website)
 for the full schema and authoring details.
+
+## Fork it: write an adapter
+
+Everything specific to sporny.pl — the devlog file layout, the `index.json`
+manifest schema, and the per-series numbering rules — lives in **one** module,
+`src/pipeline/site_adapter/sporny_pl.py`. The pipeline core knows only a small
+interface:
+
+```python
+render(entry, ctx) -> list[FileChange]   # the devlog markdown + regenerated manifest
+```
+
+`publish` resolves the adapter named in `output.adapter`, calls `render`, and
+writes the returned file changes into your website checkout (it never commits or
+pushes). To publish to a different site, write another adapter implementing that
+interface, register it in `site_adapter/__init__.py`, and point `output.adapter`
+at it — no other code changes. Nothing site-specific lives outside that package.
 
 ## Stack
 

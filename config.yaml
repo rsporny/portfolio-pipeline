@@ -18,6 +18,7 @@ redaction:
 output:
   site_repo_path: ~/repos/landing-page
   site_devlog_dir: content/devlog
+  adapter: sporny_pl
 anthropic:
   model: claude-opus-4-8
   max_tokens: 4000

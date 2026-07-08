@@ -13,6 +13,9 @@ class RedactionConfig(BaseModel):
 class OutputConfig(BaseModel):
     site_repo_path: str = "~/code/sporny.pl"
     site_devlog_dir: str = "content/devlog"
+    # Selects the site-specific renderer in src/pipeline/site_adapter/. All
+    # landing-page knowledge lives there; forking means writing another adapter.
+    adapter: str = "sporny_pl"
 
     @property
     def site_repo(self) -> Path:

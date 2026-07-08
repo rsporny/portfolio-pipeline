@@ -11,6 +11,7 @@ from pathlib import Path
 
 from .config import Config
 from .frontmatter import dump, parse
+from .site_adapter import DevlogEntry, RenderContext, SiteAdapter, get_adapter
 
 logger = logging.getLogger(__name__)
 
@@ -18,12 +19,8 @@ logger = logging.getLogger(__name__)
 # to published/ as the owner's local record.
 DEVLOG = "devlog.md"
 
-# The default series identity, used when neither the config nor an entry's own
-# recorded series (front matter / prior manifest) supplies one.
-DEFAULT_SERIES = "Senior SDET log"
-
-# Backfill: recover a weekly's frozen number from a legacy "… #N: …" title.
-_TITLE_NUMBER = re.compile(r"#(\d+)")
+# First Markdown H1 (``# Title``) in a document body.
+_H1 = re.compile(r"^#[ \t]+(.+?)[ \t]*$", re.MULTILINE)
 
 
 class PublishError(RuntimeError):
@@ -37,112 +34,36 @@ class PublishResult:
     published_files: list[Path] = field(default_factory=list)
 
 
-def _load_frozen(manifest_path: Path) -> dict[str, dict]:
-    """Read the previous manifest into a ``slug -> entry`` map, the freeze store
-    for ``series`` and ``n``: once an entry has recorded values, later runs
-    reuse them verbatim so numbers never shift or renumber on re-run."""
-    if not manifest_path.exists():
-        return {}
-    try:
-        prior = json.loads(manifest_path.read_text())
-    except (json.JSONDecodeError, OSError):
-        return {}
-    frozen: dict[str, dict] = {}
-    for entry in prior if isinstance(prior, list) else []:
-        if isinstance(entry, dict):
-            # Accept legacy "week" as the slug so first-run backfill is idempotent.
-            slug = entry.get("slug") or entry.get("week")
-            if slug:
-                frozen[str(slug)] = entry
-    return frozen
+@dataclass
+class CustomResult:
+    slug: str
+    n: int
+    series: str
+    site_file: Path
 
 
-def write_manifest(site_dir: Path, series: str = DEFAULT_SERIES) -> Path:
-    """(Re)build ``index.json`` in the site devlog dir from the ``<slug>.md``
-    files — the manifest the website reads to list entries.
-
-    The manifest schema is owned by the website. Each entry carries:
-
-    - ``type`` — ``weekly-activity`` for the GitHub-derived devlogs, ``custom``
-      for hand-authored entries (essays/notes), read from front matter and
-      defaulting to ``weekly-activity``;
-    - ``series`` — the role identity (e.g. ``Senior SDET log``); ``series`` for
-      weeklies is the caller's configured current series, but an entry's own
-      recorded series (front matter or prior manifest) always wins so history
-      is never rewritten when the role changes;
-    - ``n`` — a per-series sequence number shared across weekly and custom
-      entries, **frozen once assigned**: reused from the prior manifest or front
-      matter, else backfilled from a legacy ``#N`` title, else the next
-      ``max(n in series) + 1``;
-    - ``slug`` — the ``.md`` filename without extension (also the page anchor);
-    - ``title`` / ``date`` — the heading and the "Published" date (custom dates
-      come from ``published_at``);
-    - ``kind`` — optional custom kicker label, passed through when present.
-
-    Custom entries are authored by hand in the website repo and are never
-    written or deleted here; one lacking ``status: published`` is excluded.
-    Entries are ordered by ``date`` so weekly and custom entries interleave
-    chronologically."""
-    manifest = site_dir / "index.json"
-    frozen = _load_frozen(manifest)
-
-    entries: list[dict] = []
-    for md in sorted(site_dir.glob("*.md")):
-        front, _ = parse(md.read_text())
-        if not front:
-            continue
-        etype = str(front.get("type", "weekly-activity"))
-        # Hand-authored entries only appear once published; weeklies are always
-        # published by the time they reach the site dir.
-        if etype == "custom" and str(front.get("status", "")) != "published":
-            continue
-
-        slug = md.stem  # the filename is the canonical slug (and the #hash anchor)
-        prior = frozen.get(slug, {})
-        published = front.get("published_at") or front.get("generated_at")
-
-        # series/n resolution: frozen (never rewritten) → front matter → derive.
-        entry_series = str(prior.get("series") or front.get("series") or series)
-        n = prior.get("n")
-        if n is None:
-            n = front.get("n")
-        if n is None and etype == "weekly-activity":
-            match = _TITLE_NUMBER.search(str(front.get("title", "")))
-            if match:
-                n = int(match.group(1))
-
-        entry = {
-            "type": etype,
-            "series": entry_series,
-            "n": int(n) if n is not None else None,
-            "slug": slug,
-            "title": str(front.get("title", "")),
-            "date": str(published)[:10] if published else "",
-        }
-        if front.get("kind"):
-            entry["kind"] = str(front["kind"])
-        entries.append(entry)
-
-    _assign_numbers(entries)
-
-    entries.sort(key=lambda e: (e["date"], e["slug"]), reverse=True)
-    manifest.write_text(json.dumps(entries, indent=2, ensure_ascii=False) + "\n")
-    return manifest
+def _resolve_site_dir(config: Config, site_repo: Path | str | None) -> Path:
+    """The website's devlog dir (``site_repo`` overrides config); must exist."""
+    site_root = Path(site_repo).expanduser() if site_repo else config.output.site_repo
+    site_dir = site_root / config.output.site_devlog_dir
+    if not site_dir.exists():
+        raise PublishError(
+            f"Site devlog dir does not exist: {site_dir} — clone the site repo or "
+            "fix output.site_repo_path / output.site_devlog_dir"
+        )
+    return site_dir
 
 
-def _assign_numbers(entries: list[dict]) -> None:
-    """Fill in any missing ``n`` in place: for each series, the next number is
-    ``max(existing n in that series) + 1``. Assignment walks entries oldest
-    first (by date, then slug) so the sequence is deterministic and stable."""
-    series_max: dict[str, int] = {}
-    for entry in entries:
-        if entry["n"] is not None:
-            series_max[entry["series"]] = max(series_max.get(entry["series"], 0), entry["n"])
-    for entry in sorted(entries, key=lambda e: (e["date"], e["slug"])):
-        if entry["n"] is None:
-            nxt = series_max.get(entry["series"], 0) + 1
-            entry["n"] = nxt
-            series_max[entry["series"]] = nxt
+def _write_changes(adapter: SiteAdapter, entry: DevlogEntry, ctx: RenderContext) -> list[dict]:
+    """Render an entry through the adapter and write its file changes into the
+    website checkout. Returns the parsed manifest so callers can read numbering
+    back out. Never commits or pushes the site repo."""
+    manifest_entries: list[dict] = []
+    for change in adapter.render(entry, ctx):
+        change.path.write_text(change.content)
+        if change.path.name == "index.json":
+            manifest_entries = json.loads(change.content)
+    return manifest_entries
 
 
 def publish_approved(
@@ -155,7 +76,8 @@ def publish_approved(
 ) -> list[PublishResult]:
     """Copy each approved week's devlog into the site's devlog dir (status
     flipped to ``published``) and move the whole approved bundle to
-    ``published/``. Never commits or pushes the website repo.
+    ``published/``. Site rendering (the devlog file + the manifest) is delegated
+    to the configured adapter; this function never commits or pushes the website.
 
     ``site_repo`` overrides ``config.output.site_repo_path`` (used by CI to
     target a checked-out copy of the website repo)."""
@@ -167,6 +89,8 @@ def publish_approved(
         return []
 
     site_dir = _resolve_site_dir(config, site_repo)
+    adapter = get_adapter(config.output.adapter)
+    ctx = RenderContext(site_dir=site_dir, series=config.content.devlog_title_prefix)
 
     results: list[PublishResult] = []
     for week_dir in week_dirs:
@@ -191,9 +115,13 @@ def publish_approved(
                     text = dump(front, body)
                 else:
                     text = f.read_text()
-                if is_devlog:
-                    (site_dir / f"{week}.md").write_text(text)
                 pub_dest.write_text(text)
+                if is_devlog:
+                    if front:
+                        entry = DevlogEntry(slug=week, body=body, front_matter=front)
+                        _write_changes(adapter, entry, ctx)
+                    else:
+                        (site_dir / f"{week}.md").write_text(text)
                 f.unlink()
             else:
                 shutil.move(str(f), str(pub_dest))
@@ -203,34 +131,7 @@ def publish_approved(
                 week_dir.rmdir()  # remove the now-empty approved/<week>/
         results.append(result)
 
-    if not dry_run and any(r.site_files for r in results):
-        write_manifest(site_dir, config.content.devlog_title_prefix)
-
     return results
-
-
-def _resolve_site_dir(config: Config, site_repo: Path | str | None) -> Path:
-    """The website's devlog dir (``site_repo`` overrides config); must exist."""
-    site_root = Path(site_repo).expanduser() if site_repo else config.output.site_repo
-    site_dir = site_root / config.output.site_devlog_dir
-    if not site_dir.exists():
-        raise PublishError(
-            f"Site devlog dir does not exist: {site_dir} — clone the site repo or "
-            "fix output.site_repo_path / output.site_devlog_dir"
-        )
-    return site_dir
-
-
-# First Markdown H1 (``# Title``) in a document body.
-_H1 = re.compile(r"^#[ \t]+(.+?)[ \t]*$", re.MULTILINE)
-
-
-@dataclass
-class CustomResult:
-    slug: str
-    n: int
-    series: str
-    site_file: Path
 
 
 def publish_custom(
@@ -243,16 +144,17 @@ def publish_custom(
     date: str | None = None,
 ) -> CustomResult:
     """Turn a hand-written Markdown file into a ready-to-publish ``custom`` devlog
-    entry in the website repo, then regenerate the manifest so it picks up its
-    per-series number. File-only: never commits or pushes the website repo.
+    entry in the website repo, then let the adapter regenerate the manifest so it
+    picks up its per-series number. File-only: never commits or pushes the site.
 
     The title is taken from the file's first ``# H1``; the body (H1 included) is
     carried through verbatim. The slug defaults to the input filename, ``kind``
     and the date fall back to any front matter then a flag/today, and the number
-    ``n`` is assigned by ``write_manifest`` — never by hand. Re-running for an
+    ``n`` is assigned by the adapter's manifest — never by hand. Re-running for an
     existing slug updates the file in place while keeping the frozen number."""
     input_md = Path(input_md)
     site_dir = _resolve_site_dir(config, site_repo)
+    adapter = get_adapter(config.output.adapter)
 
     front_in, body = parse(input_md.read_text())
     match = _H1.search(body)
@@ -265,26 +167,21 @@ def publish_custom(
     slug = slug or input_md.stem
     series = str(front_in.get("series") or config.content.devlog_title_prefix)
     published_at = date or front_in.get("published_at") or datetime.now(UTC).date().isoformat()
-
-    front: dict = {
-        "type": "custom",
-        "series": series,
-        "slug": slug,
-        "title": title,
-        "published_at": str(published_at),
-        "status": "published",
-    }
     resolved_kind = kind or front_in.get("kind")
-    if resolved_kind:
-        front["kind"] = str(resolved_kind)
 
-    site_file = site_dir / f"{slug}.md"
-    site_file.write_text(dump(front, body))
+    entry = DevlogEntry(
+        slug=slug,
+        body=body,
+        type="custom",
+        title=title,
+        series=series,
+        published_at=str(published_at),
+        kind=str(resolved_kind) if resolved_kind else None,
+        status="published",
+    )
+    ctx = RenderContext(site_dir=site_dir, series=config.content.devlog_title_prefix)
+    manifest = _write_changes(adapter, entry, ctx)
 
-    write_manifest(site_dir, config.content.devlog_title_prefix)
-
-    # Read the number back out of the manifest we just wrote (write_manifest owns
-    # assignment/freezing), so the caller can report the final "<series> #N".
-    manifest = json.loads((site_dir / "index.json").read_text())
+    # The adapter owns assignment/freezing; read the final number back out.
     n = next((e["n"] for e in manifest if e.get("slug") == slug), 0)
-    return CustomResult(slug=slug, n=n, series=series, site_file=site_file)
+    return CustomResult(slug=slug, n=n, series=series, site_file=site_dir / f"{slug}.md")

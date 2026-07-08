@@ -320,8 +320,8 @@ def transform_week(
     due = [pair for mem in memories for pair in reviews_due(mem.registry, week)]
 
     # Stage B — writing, thread-aware (redact the Stage A output too).
-    # The devlog number is assigned by the site manifest (write_manifest), not
-    # here — the title is a bare subtitle and the site renders "<series> #N:".
+    # The devlog number is assigned by the site adapter's manifest, not here —
+    # the title is a bare subtitle and the site renders "<series> #N:".
     thread_context = _render_thread_context(initiatives, memories, due)
     redacted_b, n_b = redact(initiatives.model_dump_json(indent=2), phrases)
     logger.info("Stage B: %d phrase occurrence(s) redacted before the API call", n_b)
