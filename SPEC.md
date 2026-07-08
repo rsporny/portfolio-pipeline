@@ -73,7 +73,7 @@ anthropic:
 locale:
   timezone: Europe/Warsaw
 content:
-  devlog_title_prefix: Senior SDET log   # devlog title becomes "<prefix> #N: …"
+  devlog_title_prefix: Senior SDET log   # the series identity; site renders "<series> #N: …"
 ```
 
 ## Module 2: Memory
@@ -142,7 +142,7 @@ CI commits the resulting `memory/` changes to this repository's main branch as a
 Input: Stage A JSON + updated thread data for referenced threads + `reviews_due`. The prompt carries the content policy (knowledge sharing, no CTAs/offers/solicitation, never name third parties, claim only what the activity supports) and the thread context (some initiatives continue longer arcs, some contradict earlier assumptions, some assumptions are due for review — weave this in: refer back to when a thread started, what was assumed, what changed; continuity over novelty).
 
 Produces:
-1. `title` — an auto-numbered devlog title `"<content.devlog_title_prefix> #N: <subtitle>"`, where N = (devlogs already in the site) + 1.
+1. `title` — a bare, specific subtitle (the topic only, no series name and no number). The per-series number `N` is assigned by the site manifest (`write_manifest`, see Module 4), not at generation time, and the site renders the heading as `"<series> #N: <subtitle>"`. This keeps a single source of numbering shared across weekly and custom entries.
 2. `devlog` (English, 350–550 words) — opens with generalized context, explains the work without assuming repo knowledge (a short example/analogy where it helps), follows problem → decision → outcome with thread continuity where it exists, and ends with a proof-of-work link.
 3. `social` (100–180 words, English) — one channel-neutral post (hook first line, one concrete lesson, ≤3 hashtags, no CTA) that draws the reader to the full devlog.
 4. `highlights` — notable items worth revisiting, one sentence each, tagged with the initiative/thread.
@@ -173,7 +173,7 @@ The pipeline core knows only the interface. Supporting another site = writing an
 | `series` | see below                                     | role identity, e.g. `Senior SDET log` — emitted **per entry** |
 | `n`      | see below                                     | per-series sequence number, **frozen once assigned** |
 | `slug`   | the `.md` filename without extension          | the entry id and page `#hash` anchor (renamed from the old `week` key) |
-| `title`  | front matter `title`                          | customs use it verbatim as the heading; weeklies keep their `#N` title |
+| `title`  | front matter `title`                          | customs use it verbatim; weeklies hold a bare subtitle (the site prepends `<series> #N:`); the one legacy entry still carries its `#N` title, from which its `n` is backfilled |
 | `date`   | `published_at` (fallback `generated_at`)      | drives ordering and the "Published" line |
 | `kind`   | front matter `kind` (custom only, optional)   | kicker label; omitted ⇒ the page defaults to `Note` |
 
@@ -185,23 +185,16 @@ The pipeline core knows only the interface. Supporting another site = writing an
 
 ### Authoring a custom entry (hand-written notes/essays)
 
-Custom entries live only in the **website repo**, never in this pipeline. To publish one:
+Custom entries are hand-written but the pipeline does the mechanical work (front matter + numbering + manifest). The number is **never** hand-set — `write_manifest` assigns it. To publish one:
 
-1. Add `content/devlog/<slug>.md` in the website repo (the filename is the `slug` and the page anchor — choose it deliberately, e.g. `looking-ahead-2036.md`).
-2. Give it front matter:
-   ```yaml
-   ---
-   type: custom
-   series: Senior SDET log      # same string as the weekly series it shares a sequence with
-   n: 2                         # per-series number; pick the next free one (shared with weeklies)
-   slug: looking-ahead-2036     # = filename without .md
-   title: "Looking ahead: SDET role in the age of AI"   # used verbatim as the heading
-   published_at: 2026-07-07     # drives ordering + the "Published" date
-   status: published            # omit/anything else ⇒ excluded from the manifest (safe drafting)
-   kind: Essay                  # optional kicker; omit ⇒ the page shows "Note"
-   ---
+1. Write a plain Markdown file anywhere, whose **first `# H1` is the entry title**, followed by the body:
+   ```markdown
+   # Looking ahead: SDET role in the age of AI
+
+   <your essay…>
    ```
-3. Open a PR against the website repo. On the next weekly run (or any `publish`), `write_manifest` regenerates `index.json` and folds the entry in; drafts (no `status: published`) stay invisible until you flip the flag. Once `n` lands in the manifest it is frozen — don't renumber existing entries.
+2. Run `pipeline publish-custom <file.md> --site-repo <website checkout>` (options: `--slug` — defaults to the filename; `--kind` — kicker label, omit ⇒ the site shows "Note"; `--date` — defaults to today). It writes a complete `content/devlog/<slug>.md` into the website repo — `type: custom`, `series` (from `content.devlog_title_prefix`), `slug`, `title` (the H1), `published_at`, `status: published`, optional `kind`, and **no `n`** — then regenerates `index.json`, which assigns and freezes the per-series number. It prints the resulting `"<series> #N"`. The command is **file-only**: it never commits or pushes the website repo.
+3. Verify locally in the website repo (e.g. run the site's dev server), then commit + merge — Cloudflare deploys on merge, exactly like the weekly PR flow. Re-running `publish-custom` for the same slug updates the file in place and keeps the frozen number (it lives in the manifest, not the file).
 
 ## Module 5: Automation (CI)
 

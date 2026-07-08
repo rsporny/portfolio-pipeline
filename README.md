@@ -102,7 +102,9 @@ holding under fault injection. PR: https://github.com/midnightntwrk/midnight-nod
 ```
 
 The work is categorized and generalized for a broad audience, and each thread
-ends with a proof-of-work link.
+ends with a proof-of-work link. (This first entry baked `#1` into its title;
+newer entries emit a bare subtitle and the site adds the `Senior SDET log #N:`
+prefix — see below.)
 
 ## Devlog manifest
 
@@ -122,12 +124,24 @@ website repo — the list the devlog page reads. It scans every front-mattered
 ```
 
 Entries order by `date`, so hand-written **custom** entries interleave with the
-weekly ones. `n` is a single per-series sequence across both types and is frozen
-once assigned (re-runs never renumber). Custom entries are authored by hand in
-the website repo and are never written or deleted by the pipeline; one is only
-listed once it has `status: published`. See
+weekly ones. **Numbering is the pipeline's job:** `n` is a single per-series
+sequence across both types, assigned by `write_manifest` and frozen once set
+(re-runs never renumber). Weekly titles are a bare subtitle — the site renders
+`Senior SDET log #<n>: <subtitle>` — so nothing hand-bakes a number.
+
+To add a custom note or essay, write a plain Markdown file whose first `# H1`
+is the title, then run:
+
+```bash
+pipeline publish-custom looking-ahead-2036.md --site-repo ~/code/sporny.pl
+```
+
+That drops a fully-formed `content/devlog/looking-ahead-2036.md` into the website
+repo (front matter, `type: custom`, the next series number) and regenerates
+`index.json`. It never commits or pushes — you verify locally and merge, exactly
+like the weekly PR. See
 [SPEC.md → Module 4](SPEC.md#manifest-schema-contentdevlogindexjson-owned-by-the-website)
-for the full schema and how to author a custom entry.
+for the full schema and authoring details.
 
 ## Stack
 

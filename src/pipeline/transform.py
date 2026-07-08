@@ -24,11 +24,6 @@ def find_latest_activity(raw_dir: Path | str = "raw") -> Path:
     return candidates[-1]
 
 
-def next_entry_number(published_dir: Path | str = "published") -> int:
-    """Next devlog number = count of already-published devlogs + 1."""
-    return len(list(Path(published_dir).glob("*/devlog.md"))) + 1
-
-
 def _repo_context(config: Config, activity: Activity) -> str:
     """Domain descriptions for the repos present in this week's activity."""
     descriptions = config.repos.descriptions
@@ -108,7 +103,6 @@ def transform_week(
     llm: LLMClient,
     raw_dir: Path | str = "raw",
     drafts_dir: Path | str = "drafts",
-    published_dir: Path | str = "published",
     week: str | None = None,
 ) -> Path:
     """Run redaction → Stage A → Stage B and write the draft bundle for a week."""
@@ -136,10 +130,11 @@ def transform_week(
     (out_dir / "summary-tech.md").write_text(_render_summary(week, initiatives))
 
     # Stage B — writing (redact the Stage A output too, per the hard constraint).
-    entry_number = next_entry_number(published_dir)
+    # The devlog number is assigned by the site manifest (write_manifest), not
+    # here — the title is a bare subtitle and the site renders "<series> #N:".
     redacted_b, n_b = redact(initiatives.model_dump_json(indent=2), phrases)
     logger.info("Stage B: %d phrase occurrence(s) redacted before the API call", n_b)
-    prompt_b = stage_b_prompt(redacted_b, config.content.devlog_title_prefix, entry_number)
+    prompt_b = stage_b_prompt(redacted_b)
     content = _generate(llm, prompt_b, Content, out_dir)
     assert isinstance(content, Content)
 

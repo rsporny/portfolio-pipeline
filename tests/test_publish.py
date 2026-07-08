@@ -6,7 +6,7 @@ import pytest
 
 from pipeline.config import Config, OutputConfig, ReposConfig
 from pipeline.frontmatter import dump, parse
-from pipeline.publish import PublishError, publish_approved, write_manifest
+from pipeline.publish import PublishError, publish_approved, publish_custom, write_manifest
 
 
 def _config(site_repo, devlog_dir="content/devlog"):
@@ -306,3 +306,104 @@ def test_publish_nothing_when_approved_empty(tmp_path):
         _config(site), approved_dir=tmp_path / "approved", published_dir=tmp_path / "published"
     )
     assert results == []
+
+
+# --- publish-custom -------------------------------------------------------
+
+
+def test_publish_custom_creates_entry_and_assigns_number(tmp_path):
+    """A hand-written .md becomes a published custom entry: H1 → title, filename
+    → slug, series from config, status: published, and n assigned by the manifest
+    (never hand-set) continuing the series past the existing weekly."""
+    site = _site(tmp_path)
+    # An existing weekly already holds #1 in the series.
+    _weekly(site / "content/devlog", "2026-W27", "Senior SDET log #1: exit codes", "2026-07-05")
+    src = tmp_path / "looking-ahead-2036.md"
+    src.write_text("# Looking ahead: the SDET role in 2036\n\nMy essay body.\n")
+
+    result = publish_custom(_config(site), src, date="2026-07-10")
+
+    site_file = site / "content/devlog" / "looking-ahead-2036.md"
+    assert site_file.exists()
+    front, body = parse(site_file.read_text())
+    assert front["type"] == "custom"
+    assert front["series"] == "Senior SDET log"
+    assert front["slug"] == "looking-ahead-2036"
+    assert front["title"] == "Looking ahead: the SDET role in 2036"
+    assert front["status"] == "published"
+    assert front["published_at"] == "2026-07-10"
+    assert "n" not in front  # numbering lives in the manifest, not the file
+    assert "My essay body." in body  # body carried through verbatim (H1 included)
+
+    # Manifest picked it up with the next series number (weekly #1 → custom #2).
+    entries = json.loads((site / "content/devlog" / "index.json").read_text())
+    entry = next(e for e in entries if e["slug"] == "looking-ahead-2036")
+    assert entry["n"] == 2
+    assert result.n == 2
+    assert result.series == "Senior SDET log"
+    assert result.site_file == site_file
+
+
+def test_publish_custom_slug_kind_and_date_overrides(tmp_path):
+    site = _site(tmp_path)
+    src = tmp_path / "draft-note.md"
+    src.write_text("# A quick note\n\nBody.\n")
+
+    result = publish_custom(_config(site), src, slug="hello-world", kind="Essay", date="2026-08-01")
+
+    site_file = site / "content/devlog" / "hello-world.md"
+    assert site_file.exists()
+    assert not (site / "content/devlog" / "draft-note.md").exists()  # --slug wins over filename
+    front, _ = parse(site_file.read_text())
+    assert front["kind"] == "Essay"
+    assert front["published_at"] == "2026-08-01"
+    assert result.slug == "hello-world"
+
+
+def test_publish_custom_kind_omitted_by_default(tmp_path):
+    site = _site(tmp_path)
+    src = tmp_path / "note.md"
+    src.write_text("# Note\n\nBody.\n")
+
+    publish_custom(_config(site), src)
+
+    front, _ = parse((site / "content/devlog" / "note.md").read_text())
+    assert "kind" not in front
+
+
+def test_publish_custom_missing_h1_raises(tmp_path):
+    site = _site(tmp_path)
+    src = tmp_path / "note.md"
+    src.write_text("No heading here, just prose.\n")
+
+    with pytest.raises(PublishError):
+        publish_custom(_config(site), src)
+
+
+def test_publish_custom_missing_site_dir_raises(tmp_path):
+    src = tmp_path / "note.md"
+    src.write_text("# Note\n\nBody.\n")
+
+    with pytest.raises(PublishError):
+        publish_custom(_config(tmp_path / "nonexistent"), src)
+
+
+def test_publish_custom_rerun_keeps_frozen_number(tmp_path):
+    """Re-running for the same slug updates the file in place but keeps the
+    already-assigned number (it lives in the manifest, not the file)."""
+    site = _site(tmp_path)
+    src = tmp_path / "note.md"
+    src.write_text("# Note\n\nFirst draft.\n")
+    first = publish_custom(_config(site), src)
+
+    # A later weekly publishes and would take the next number...
+    _weekly(site / "content/devlog", "2026-W30", "some subtitle", "2026-07-26")
+    write_manifest(site / "content/devlog", "Senior SDET log")
+
+    # ...but re-publishing the custom keeps its original number.
+    src.write_text("# Note\n\nSecond draft, fixed a typo.\n")
+    second = publish_custom(_config(site), src)
+
+    assert second.n == first.n
+    _, body = parse((site / "content/devlog" / "note.md").read_text())
+    assert "Second draft" in body

@@ -39,6 +39,7 @@ This is a building-in-public project: a practical experiment in wiring AI into a
 - `uv run pipeline run` — collect + transform
 - `uv run pipeline review` — list drafts awaiting review (local/offline flow)
 - `uv run pipeline publish --site-repo <path>` — render via the site adapter into a website checkout (used by CI and locally)
+- `uv run pipeline publish-custom <file.md> --site-repo <path>` — turn a hand-written Markdown file (first `# H1` = title) into a `type: custom` devlog entry in the website repo + regenerate the manifest (numbering assigned by the pipeline; file-only, no push)
 - `uv run pytest` — tests
 
 ## Detailed specification

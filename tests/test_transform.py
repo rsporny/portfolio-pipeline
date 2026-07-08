@@ -11,7 +11,7 @@ import pytest
 from pipeline.config import Config, RedactionConfig, ReposConfig
 from pipeline.llm import LLMClient, TransformError, parse_json_response, strip_fences
 from pipeline.models import Activity, Commit, RepoActivity
-from pipeline.transform import find_latest_activity, next_entry_number, transform_week
+from pipeline.transform import find_latest_activity, transform_week
 
 # --- JSON parsing -----------------------------------------------------------
 
@@ -130,7 +130,7 @@ def _stage_a():
 
 def _stage_b():
     data = {
-        "title": "Senior SDET log #1: Wiring commits into a content pipeline",
+        "title": "Wiring commits into a content pipeline",
         "devlog": "This week I built the collector.",
         "social": "This week I shipped a collector. Here's what I learned.",
         "highlights": ["Collector — 23 tests passing"],
@@ -190,8 +190,11 @@ def test_transform_week_writes_all_drafts(tmp_path):
     assert devlog.startswith("---")
     assert "status: draft" in devlog
     assert f"week: {week}" in devlog
-    assert "Senior SDET log #1" in devlog  # title in front matter and H1
-    assert "# Senior SDET log #1:" in devlog
+    # The title is a bare subtitle (no series prefix / number) — the site adds
+    # "Senior SDET log #N:" from the manifest; it appears in front matter and H1.
+    assert "Wiring commits into a content pipeline" in devlog
+    assert "# Wiring commits into a content pipeline" in devlog
+    assert "#1" not in devlog
     assert "Collector" in devlog  # source_initiatives front matter
     assert "This week I built the collector." in devlog
 
@@ -268,37 +271,23 @@ def test_transform_passes_repo_context_to_stage_a(tmp_path):
         llm,
         raw_dir=raw_dir,
         drafts_dir=drafts_dir,
-        published_dir=tmp_path / "published",
         week=week,
     )
 
     assert "A blockchain node in the Cardano ecosystem." in llm.prompts[0]
 
 
-def test_transform_uses_next_entry_number_in_title_prompt(tmp_path):
+def test_transform_title_prompt_carries_no_number(tmp_path):
+    """Numbering is the manifest's job now: the Stage B prompt asks for a bare
+    subtitle (no series prefix / number) and the model's title flows through
+    verbatim to the draft."""
     raw_dir, drafts_dir = tmp_path / "raw", tmp_path / "drafts"
-    published_dir = tmp_path / "published"
-    for wk in ("2026-W20", "2026-W21"):  # two published → next is #3
-        (published_dir / wk).mkdir(parents=True)
-        (published_dir / wk / "devlog.md").write_text("x")
     week = _write_activity(raw_dir)
     llm = _FakeLLM([_stage_a(), _stage_b()])
 
-    transform_week(
-        _config(),
-        llm,
-        raw_dir=raw_dir,
-        drafts_dir=drafts_dir,
-        published_dir=published_dir,
-        week=week,
-    )
+    out_dir = transform_week(_config(), llm, raw_dir=raw_dir, drafts_dir=drafts_dir, week=week)
 
-    assert "#3:" in llm.prompts[1]  # Stage B prompt carries the computed number
-
-
-def test_next_entry_number(tmp_path):
-    published = tmp_path / "published"
-    assert next_entry_number(published) == 1
-    (published / "2026-W20").mkdir(parents=True)
-    (published / "2026-W20" / "devlog.md").write_text("x")
-    assert next_entry_number(published) == 2
+    # The prompt instructs a bare subtitle and injects no per-run number.
+    assert "no series name and no number" in llm.prompts[1]
+    devlog = (out_dir / "devlog.md").read_text()
+    assert "# Wiring commits into a content pipeline" in devlog  # title used verbatim

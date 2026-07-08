@@ -161,18 +161,12 @@ def publish_approved(
     target a checked-out copy of the website repo)."""
     approved_dir = Path(approved_dir)
     published_dir = Path(published_dir)
-    site_root = Path(site_repo).expanduser() if site_repo else config.output.site_repo
-    site_dir = site_root / config.output.site_devlog_dir
 
     week_dirs = sorted(p for p in approved_dir.glob("*") if p.is_dir())
     if not week_dirs:
         return []
 
-    if not site_dir.exists():
-        raise PublishError(
-            f"Site devlog dir does not exist: {site_dir} — clone the site repo or "
-            "fix output.site_repo_path / output.site_devlog_dir"
-        )
+    site_dir = _resolve_site_dir(config, site_repo)
 
     results: list[PublishResult] = []
     for week_dir in week_dirs:
@@ -213,3 +207,84 @@ def publish_approved(
         write_manifest(site_dir, config.content.devlog_title_prefix)
 
     return results
+
+
+def _resolve_site_dir(config: Config, site_repo: Path | str | None) -> Path:
+    """The website's devlog dir (``site_repo`` overrides config); must exist."""
+    site_root = Path(site_repo).expanduser() if site_repo else config.output.site_repo
+    site_dir = site_root / config.output.site_devlog_dir
+    if not site_dir.exists():
+        raise PublishError(
+            f"Site devlog dir does not exist: {site_dir} — clone the site repo or "
+            "fix output.site_repo_path / output.site_devlog_dir"
+        )
+    return site_dir
+
+
+# First Markdown H1 (``# Title``) in a document body.
+_H1 = re.compile(r"^#[ \t]+(.+?)[ \t]*$", re.MULTILINE)
+
+
+@dataclass
+class CustomResult:
+    slug: str
+    n: int
+    series: str
+    site_file: Path
+
+
+def publish_custom(
+    config: Config,
+    input_md: Path | str,
+    *,
+    site_repo: Path | str | None = None,
+    slug: str | None = None,
+    kind: str | None = None,
+    date: str | None = None,
+) -> CustomResult:
+    """Turn a hand-written Markdown file into a ready-to-publish ``custom`` devlog
+    entry in the website repo, then regenerate the manifest so it picks up its
+    per-series number. File-only: never commits or pushes the website repo.
+
+    The title is taken from the file's first ``# H1``; the body (H1 included) is
+    carried through verbatim. The slug defaults to the input filename, ``kind``
+    and the date fall back to any front matter then a flag/today, and the number
+    ``n`` is assigned by ``write_manifest`` — never by hand. Re-running for an
+    existing slug updates the file in place while keeping the frozen number."""
+    input_md = Path(input_md)
+    site_dir = _resolve_site_dir(config, site_repo)
+
+    front_in, body = parse(input_md.read_text())
+    match = _H1.search(body)
+    if not match:
+        raise PublishError(
+            f"{input_md} has no '# Title' heading — the first H1 becomes the entry title"
+        )
+    title = match.group(1).strip()
+
+    slug = slug or input_md.stem
+    series = str(front_in.get("series") or config.content.devlog_title_prefix)
+    published_at = date or front_in.get("published_at") or datetime.now(UTC).date().isoformat()
+
+    front: dict = {
+        "type": "custom",
+        "series": series,
+        "slug": slug,
+        "title": title,
+        "published_at": str(published_at),
+        "status": "published",
+    }
+    resolved_kind = kind or front_in.get("kind")
+    if resolved_kind:
+        front["kind"] = str(resolved_kind)
+
+    site_file = site_dir / f"{slug}.md"
+    site_file.write_text(dump(front, body))
+
+    write_manifest(site_dir, config.content.devlog_title_prefix)
+
+    # Read the number back out of the manifest we just wrote (write_manifest owns
+    # assignment/freezing), so the caller can report the final "<series> #N".
+    manifest = json.loads((site_dir / "index.json").read_text())
+    n = next((e["n"] for e in manifest if e.get("slug") == slug), 0)
+    return CustomResult(slug=slug, n=n, series=series, site_file=site_file)

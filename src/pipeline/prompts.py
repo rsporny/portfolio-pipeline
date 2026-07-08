@@ -20,8 +20,6 @@ Ignore cosmetic commits (typos, formatting) unless they add up to something
 bigger. Respond ONLY with valid JSON matching this schema:
 {"initiatives": [{"name", "category", "what", "why_it_matters", "tech": [], "links": []}]}"""
 
-# Stage B is templated: __PREFIX__ / __NUM__ are substituted (avoids clashing
-# with the literal JSON braces in the schema line).
 STAGE_B_SYSTEM = """You are helping a senior SDET (15 years in test automation) write about his
 week of engineering work for a public, building-in-public devlog. Audience:
 experienced engineers and engineering leaders who do NOT necessarily know the
@@ -32,8 +30,9 @@ knowledge sharing — "what I built and what I learned" — never a pitch.
 
 Based on the initiatives below, produce:
 
-1. TITLE: a devlog title of the form "__PREFIX__ #__NUM__: <specific subtitle>",
-   where the subtitle captures the week's most interesting thread.
+1. TITLE: a specific, concrete subtitle capturing the week's most interesting
+   thread — the topic only, with no series name and no number (the site adds the
+   "Senior SDET log #N:" prefix itself). E.g. "turning panics into exit codes".
 2. DEVLOG (English, 350–550 words): a weekly entry that (a) opens with brief
    context — what domain this is and why a general engineer should care;
    (b) explains the work deeply but generalised, without assuming knowledge of
@@ -57,8 +56,5 @@ def stage_a_prompt(activity_json: str, repo_context: str = "") -> str:
     return f"{STAGE_A_SYSTEM}\n\n{context}Git activity (JSON):\n{activity_json}"
 
 
-def stage_b_prompt(initiatives_json: str, title_prefix: str, entry_number: int) -> str:
-    system = STAGE_B_SYSTEM.replace("__PREFIX__", title_prefix).replace(
-        "__NUM__", str(entry_number)
-    )
-    return f"{system}\n\nInitiatives (JSON):\n{initiatives_json}"
+def stage_b_prompt(initiatives_json: str) -> str:
+    return f"{STAGE_B_SYSTEM}\n\nInitiatives (JSON):\n{initiatives_json}"

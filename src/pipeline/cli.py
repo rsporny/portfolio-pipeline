@@ -9,7 +9,7 @@ from .config import Config, load_config
 from .github import GitHubClient
 from .llm import LLMClient, TransformError
 from .models import Activity
-from .publish import PublishError, publish_approved
+from .publish import PublishError, publish_approved, publish_custom
 from .review import list_drafts
 from .transform import transform_week
 
@@ -25,6 +25,9 @@ DRY_RUN_OPTION = typer.Option(False, "--dry-run", help="Preview without writing 
 SITE_REPO_OPTION = typer.Option(
     None, "--site-repo", help="Override output.site_repo_path (e.g. a CI checkout)"
 )
+SLUG_OPTION = typer.Option(None, "--slug", help="Entry slug (default: the filename)")
+KIND_OPTION = typer.Option(None, "--kind", help="Kicker label (default: site shows Note)")
+DATE_OPTION = typer.Option(None, "--date", help="Published date YYYY-MM-DD (default: today)")
 
 
 def _transform(cfg: Config, week: str | None) -> None:
@@ -123,3 +126,25 @@ def publish(
         )
     if not dry_run:
         typer.echo("\nSite repo not committed or pushed — that stays manual.")
+
+
+@app.command("publish-custom")
+def publish_custom_cmd(
+    file: str = typer.Argument(..., help="Markdown file; its first '# H1' is the entry title"),
+    slug: str | None = SLUG_OPTION,
+    kind: str | None = KIND_OPTION,
+    date: str | None = DATE_OPTION,
+    config: str = CONFIG_OPTION,
+    site_repo: str | None = SITE_REPO_OPTION,
+) -> None:
+    """Render a hand-written Markdown file into a custom devlog entry in the
+    website repo and regenerate the manifest (no auto-push). The per-series
+    number is assigned by the pipeline — you never set it by hand."""
+    cfg = load_config(config)
+    try:
+        result = publish_custom(cfg, file, site_repo=site_repo, slug=slug, kind=kind, date=date)
+    except PublishError as exc:
+        typer.echo(f"publish-custom failed: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    typer.echo(f"Wrote {result.site_file} → {result.series} #{result.n}")
+    typer.echo("Verify locally in the site repo, then commit + merge to publish.")

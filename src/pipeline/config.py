@@ -29,7 +29,8 @@ class LocaleConfig(BaseModel):
 
 
 class ContentConfig(BaseModel):
-    # Prefix for the auto-numbered devlog title, e.g. "Senior SDET log #3: …".
+    # The series identity. Weeklies emit a bare subtitle; the site manifest
+    # assigns the per-series number and the site renders "Senior SDET log #N: …".
     devlog_title_prefix: str = "Senior SDET log"
 
 
