@@ -21,7 +21,16 @@ def _approved(approved_dir, week="2026-W27"):
     week_dir = approved_dir / week
     week_dir.mkdir(parents=True)
     (week_dir / "devlog.md").write_text(
-        dump({"title": "Log #1", "status": "draft", "week": week}, "Devlog body.")
+        dump(
+            {
+                "title": "Log #1",
+                "status": "draft",
+                "week": week,
+                "generated_at": "2026-07-05T10:00:00+00:00",
+                "source_initiatives": ["Collector"],
+            },
+            "Devlog body.",
+        )
     )
     (week_dir / "social.md").write_text(
         dump({"title": "Log #1", "status": "draft", "week": week}, "Social body.")
@@ -46,18 +55,36 @@ def test_publish_copies_devlog_to_site_and_moves_bundle(tmp_path):
 
     results = publish_approved(_config(site), approved_dir=approved, published_dir=published)
 
-    # Devlog on the site as <week>.md, with status flipped to published.
+    # Devlog on the site as <week>.md, with the clean adapter-built front matter
+    # (composed from the neutral entry — draft-only keys like `week`/`generated_at`
+    # do NOT leak onto the public site file; provenance is surfaced from meta).
     site_file = site / "content/devlog" / f"{week}.md"
     assert site_file.exists()
-    assert parse(site_file.read_text())[0]["status"] == "published"
+    site_front = parse(site_file.read_text())[0]
+    assert site_front["status"] == "published"
+    assert set(site_front) == {
+        "type",
+        "series",
+        "slug",
+        "title",
+        "published_at",
+        "status",
+        "source_initiatives",
+    }
+    assert "week" not in site_front and "generated_at" not in site_front
+    assert site_front["source_initiatives"] == ["Collector"]
     # Only the devlog goes to the site.
     assert not (site / "content/devlog" / "social.md").exists()
     assert not (site / "content/devlog" / "highlights.md").exists()
 
-    # The whole bundle moved to published/, approved/<week> cleaned up.
+    # The whole bundle moved to published/, approved/<week> cleaned up. The
+    # published/ record keeps the full-fidelity draft front matter (provenance).
     for name in ("devlog.md", "social.md", "highlights.md", "summary-tech.json"):
         assert (published / week / name).exists(), name
-    assert parse((published / week / "devlog.md").read_text())[0]["status"] == "published"
+    pub_front = parse((published / week / "devlog.md").read_text())[0]
+    assert pub_front["status"] == "published"
+    assert pub_front["week"] == week  # provenance retained locally, not on the site
+    assert pub_front["generated_at"] == "2026-07-05T10:00:00+00:00"
     assert not (approved / week).exists()
 
     assert results[0].week == week

@@ -6,7 +6,7 @@ An automated "commit → content" pipeline: once a week it collects the owner's 
 
 Publishing is a pull request against the owner's website repo; **merge = publish** (Cloudflare deploys on merge). The pipeline never merges — a human always reviews first.
 
-This is a building-in-public project: a practical experiment in wiring AI into a real engineering workflow, with a human in the loop. The repo is public and represents the owner's work — code quality, tests, and the README matter as much as the tool itself. It is designed to be forkable: site-specific logic lives only in a small adapter.
+This is a building-in-public project: a practical experiment in wiring AI into a real engineering workflow, with a human in the loop. The repo is public and represents the owner's work — code quality, tests, and the README matter as much as the tool itself. It is designed to be forkable: the website owns its own presentation schema (site file front matter, the `index.json` manifest, per-series numbering), and all of it lives inside one adapter under `src/pipeline/site_adapter/`. The pipeline core knows only the adapter's `render(entry, ctx) -> list[FileChange]` interface and a site-neutral `DevlogEntry`; no site-specific logic lives anywhere else.
 
 ## Owner and context
 

@@ -90,7 +90,7 @@ def publish_approved(
 
     site_dir = _resolve_site_dir(config, site_repo)
     adapter = get_adapter(config.output.adapter)
-    ctx = RenderContext(site_dir=site_dir, series=config.content.devlog_title_prefix)
+    ctx = RenderContext(site_dir=site_dir, config=config)
 
     results: list[PublishResult] = []
     for week_dir in week_dirs:
@@ -118,7 +118,23 @@ def publish_approved(
                 pub_dest.write_text(text)
                 if is_devlog:
                     if front:
-                        entry = DevlogEntry(slug=week, body=body, front_matter=front)
+                        # Hand the adapter a neutral entry; it composes the site
+                        # file's front matter itself. Provenance (source_initiatives)
+                        # rides along in meta, and the full-fidelity draft front
+                        # matter stays only in the published/ local record above.
+                        meta = (
+                            {"source_initiatives": front["source_initiatives"]}
+                            if front.get("source_initiatives")
+                            else {}
+                        )
+                        entry = DevlogEntry(
+                            slug=week,
+                            title=str(front.get("title", "")),
+                            body=body,
+                            date=str(front["published_at"])[:10],
+                            type="weekly-activity",
+                            meta=meta,
+                        )
                         _write_changes(adapter, entry, ctx)
                     else:
                         (site_dir / f"{week}.md").write_text(text)
@@ -165,23 +181,30 @@ def publish_custom(
     title = match.group(1).strip()
 
     slug = slug or input_md.stem
-    series = str(front_in.get("series") or config.content.devlog_title_prefix)
     published_at = date or front_in.get("published_at") or datetime.now(UTC).date().isoformat()
-    resolved_kind = kind or front_in.get("kind")
+
+    # Site-specific hints (kicker, per-entry series override) ride in meta; the
+    # adapter resolves them — publish.py never resolves the series itself.
+    meta: dict = {}
+    if kind or front_in.get("kind"):
+        meta["kind"] = str(kind or front_in["kind"])
+    if front_in.get("series"):
+        meta["series"] = str(front_in["series"])
 
     entry = DevlogEntry(
         slug=slug,
-        body=body,
-        type="custom",
         title=title,
-        series=series,
-        published_at=str(published_at),
-        kind=str(resolved_kind) if resolved_kind else None,
-        status="published",
+        body=body,
+        date=str(published_at)[:10],
+        type="custom",
+        meta=meta,
     )
-    ctx = RenderContext(site_dir=site_dir, series=config.content.devlog_title_prefix)
+    ctx = RenderContext(site_dir=site_dir, config=config)
     manifest = _write_changes(adapter, entry, ctx)
 
-    # The adapter owns assignment/freezing; read the final number back out.
-    n = next((e["n"] for e in manifest if e.get("slug") == slug), 0)
+    # The adapter owns front matter + numbering; read the assigned number and
+    # the resolved series back out of the manifest entry it produced.
+    published = next((e for e in manifest if e.get("slug") == slug), {})
+    n = published.get("n", 0)
+    series = str(published.get("series", ""))
     return CustomResult(slug=slug, n=n, series=series, site_file=site_dir / f"{slug}.md")

@@ -4,6 +4,7 @@ import json
 
 import pytest
 
+from pipeline.config import Config, ReposConfig
 from pipeline.frontmatter import dump, parse
 from pipeline.site_adapter import (
     AdapterError,
@@ -14,11 +15,17 @@ from pipeline.site_adapter import (
     get_adapter,
 )
 
-SERIES = "Senior SDET log"
+SERIES = "Senior SDET log"  # the default content.devlog_title_prefix
 
 
 def _adapter() -> SpornyPlAdapter:
     return SpornyPlAdapter()
+
+
+def _ctx(site_dir):
+    # A minimal config; content.devlog_title_prefix defaults to SERIES.
+    config = Config(github_user="rsporny", repos=ReposConfig(allowlist=["o/r"]))
+    return RenderContext(site_dir=site_dir, config=config)
 
 
 def _site(tmp_path):
@@ -72,28 +79,38 @@ def test_get_adapter_unknown_raises():
 # --- render: weekly ---------------------------------------------------------
 
 
-def test_render_weekly_writes_devlog_and_manifest(tmp_path):
-    """A weekly carries its draft front matter verbatim onto the site and the
-    manifest lists it — even on a first publish, before its .md is on disk."""
+def test_render_weekly_composes_clean_front_matter(tmp_path):
+    """A weekly's site front matter is composed by the adapter from the neutral
+    entry (never passed through from the draft), so draft-only keys never leak;
+    provenance rides in `meta` and is surfaced. The manifest lists the entry even
+    on a first publish, before its .md is on disk."""
     site_dir = _site(tmp_path)
-    front = {
-        "title": "exit codes",
-        "status": "published",
-        "week": "2026-W27",
-        "published_at": "2026-07-05",
-    }
-    entry = DevlogEntry(slug="2026-W27", body="weekly body", front_matter=front)
+    entry = DevlogEntry(
+        slug="2026-W27",
+        title="exit codes",
+        body="weekly body",
+        date="2026-07-05",
+        type="weekly-activity",
+        meta={"source_initiatives": ["Collector"]},
+    )
 
-    changes = _adapter().render(entry, RenderContext(site_dir, SERIES))
+    changes = _adapter().render(entry, _ctx(site_dir))
 
     assert [c.path.name for c in changes] == ["2026-W27.md", "index.json"]
-    md = next(c for c in changes if c.path.name == "2026-W27.md")
-    parsed_front, body = parse(md.content)
-    assert parsed_front == front  # verbatim, nothing dropped
+    front, body = parse(next(c for c in changes if c.path.name == "2026-W27.md").content)
+    # Clean, adapter-built shape — no draft-only keys (e.g. generated_at) leak.
+    assert front == {
+        "type": "weekly-activity",
+        "series": SERIES,
+        "slug": "2026-W27",
+        "title": "exit codes",
+        "published_at": "2026-07-05",
+        "status": "published",
+        "source_initiatives": ["Collector"],
+    }
     assert body.strip() == "weekly body"
 
-    manifest = json.loads(next(c for c in changes if c.path.name == "index.json").content)
-    entry_out = manifest[0]
+    entry_out = json.loads(next(c for c in changes if c.path.name == "index.json").content)[0]
     assert entry_out["slug"] == "2026-W27"
     assert entry_out["type"] == "weekly-activity"
     assert entry_out["series"] == SERIES
@@ -108,21 +125,21 @@ def test_render_custom_composes_front_matter(tmp_path):
     site_dir = _site(tmp_path)
     entry = DevlogEntry(
         slug="looking-ahead",
-        body="# Looking ahead\n\nEssay body.\n",
-        type="custom",
         title="Looking ahead",
-        series=SERIES,
-        published_at="2026-07-10",
-        kind="Essay",
+        body="# Looking ahead\n\nEssay body.\n",
+        date="2026-07-10",
+        type="custom",
+        meta={"kind": "Essay"},
     )
 
-    changes = _adapter().render(entry, RenderContext(site_dir, SERIES))
+    changes = _adapter().render(entry, _ctx(site_dir))
     md = next(c for c in changes if c.path.name == "looking-ahead.md")
     front, body = parse(md.content)
 
     # Front matter composed in the manifest's source-schema order.
     assert list(front) == ["type", "series", "slug", "title", "published_at", "status", "kind"]
     assert front["type"] == "custom"
+    assert front["series"] == SERIES  # default series when the entry has no override
     assert front["status"] == "published"
     assert front["kind"] == "Essay"
     assert "Essay body." in body
@@ -132,17 +149,28 @@ def test_render_custom_composes_front_matter(tmp_path):
     assert entry_out["n"] == 1
 
 
+def test_render_custom_series_override_from_meta(tmp_path):
+    """A per-entry series override in meta wins over the configured default."""
+    site_dir = _site(tmp_path)
+    entry = DevlogEntry(
+        slug="old-note",
+        title="Old note",
+        body="# Old note\n\nx",
+        date="2024-01-01",
+        type="custom",
+        meta={"series": "Junior tester log"},
+    )
+    changes = _adapter().render(entry, _ctx(site_dir))
+    front, _ = parse(next(c for c in changes if c.path.name == "old-note.md").content)
+    assert front["series"] == "Junior tester log"
+
+
 def test_render_custom_kind_omitted_when_absent(tmp_path):
     site_dir = _site(tmp_path)
     entry = DevlogEntry(
-        slug="note",
-        body="# Note\n\nx",
-        type="custom",
-        title="Note",
-        series=SERIES,
-        published_at="2026-07-10",
+        slug="note", title="Note", body="# Note\n\nx", date="2026-07-10", type="custom"
     )
-    changes = _adapter().render(entry, RenderContext(site_dir, SERIES))
+    changes = _adapter().render(entry, _ctx(site_dir))
     front, _ = parse(next(c for c in changes if c.path.name == "note.md").content)
     assert "kind" not in front
 

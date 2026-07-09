@@ -30,32 +30,37 @@ class SpornyPlAdapter:
         """Return the file changes to publish one entry: its ``<slug>.md`` plus
         the regenerated ``index.json`` (which incorporates this entry and every
         existing entry under ``ctx.site_dir``)."""
-        front = self._front_matter(entry)
+        default_series = ctx.config.content.devlog_title_prefix
+        front = self._front_matter(entry, default_series)
         markdown = FileChange(ctx.site_dir / f"{entry.slug}.md", dump(front, entry.body))
         # Inject the entry being published so the manifest reflects it even on a
         # first publish (its .md is not on disk until the core writes it).
-        manifest = self._manifest(ctx.site_dir, ctx.series, extra={entry.slug: front})
+        manifest = self._manifest(ctx.site_dir, default_series, extra={entry.slug: front})
         return [markdown, manifest]
 
     def manifest(self, site_dir: Path, series: str = DEFAULT_SERIES) -> FileChange:
         """Rebuild ``index.json`` purely from the ``.md`` files already on disk."""
         return self._manifest(site_dir, series, extra={})
 
-    # --- front matter (custom entries; weeklies pass theirs verbatim) --------
+    # --- front matter --------------------------------------------------------
+    # The adapter composes the site file's front matter for BOTH entry kinds
+    # from the neutral entry — nothing is passed through from the draft.
 
-    def _front_matter(self, entry: DevlogEntry) -> dict:
-        if entry.front_matter is not None:
-            return dict(entry.front_matter)
+    def _front_matter(self, entry: DevlogEntry, default_series: str) -> dict:
         front: dict = {
             "type": entry.type,
-            "series": entry.series,
+            "series": entry.meta.get("series") or default_series,
             "slug": entry.slug,
             "title": entry.title,
-            "published_at": entry.published_at,
-            "status": entry.status,
+            "published_at": entry.date,
+            "status": "published",
         }
-        if entry.kind:
-            front["kind"] = entry.kind
+        if entry.meta.get("kind"):
+            front["kind"] = str(entry.meta["kind"])
+        # Weeklies carry their provenance onto the public site file — an explicit
+        # transparency choice of this adapter, not a passthrough of draft state.
+        if entry.meta.get("source_initiatives"):
+            front["source_initiatives"] = entry.meta["source_initiatives"]
         return front
 
     # --- manifest ------------------------------------------------------------

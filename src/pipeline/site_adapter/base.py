@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol, runtime_checkable
+
+from ..config import Config
 
 # The pipeline core knows only this interface. All knowledge about a specific
 # website (its file layout, manifest schema, numbering rules) lives inside one
@@ -28,29 +30,31 @@ class FileChange:
 class DevlogEntry:
     """A devlog entry to publish, described in site-neutral terms.
 
-    Weeklies arrive already front-mattered from the draft bundle, so they carry
-    ``front_matter`` verbatim (preserving keys like ``source_initiatives``).
-    Custom entries carry their semantic fields and the adapter composes the
-    front matter (the manifest's source schema is the adapter's business)."""
+    Both weekly and custom entries carry the same structured fields — the core
+    never hands the adapter a ready-made front-matter dict, so no producer-side
+    (transform) decision leaks onto the published site. Everything site- or
+    pipeline-specific that isn't part of this neutral core goes in ``meta`` (e.g.
+    weeklies pass ``source_initiatives``; customs pass ``kind`` and, when the
+    author set one, a per-entry ``series`` override). The adapter decides which,
+    if any, of those to surface — it owns the entire output shape."""
 
     slug: str
-    body: str
-    type: str = "weekly-activity"  # or "custom"
-    title: str | None = None
-    series: str | None = None
-    published_at: str | None = None
-    kind: str | None = None
-    status: str = "published"
-    front_matter: dict | None = None
+    title: str
+    body: str  # markdown body, H1 included, for both kinds
+    date: str  # publication date, YYYY-MM-DD
+    type: str = "weekly-activity"  # or "custom" (a real pipeline distinction)
+    meta: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
 class RenderContext:
     """Everything the adapter needs beyond the entry itself: where the website's
-    devlog dir lives and the caller's configured current series."""
+    devlog dir lives and the pipeline config (the adapter reads whatever it needs
+    from it — e.g. the configured series — so no site vocabulary leaks into this
+    neutral interface)."""
 
     site_dir: Path
-    series: str
+    config: Config
 
 
 @runtime_checkable

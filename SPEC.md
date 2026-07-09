@@ -155,37 +155,47 @@ Error handling (all model calls): retry with backoff (3 attempts); JSON validati
 
 ## Module 4: Site adapter and publishing
 
-All knowledge about the landing page lives in ONE module: `src/pipeline/site_adapter/sporny_pl.py`, implementing a small interface:
+### The interface (all the pipeline core knows)
+
+The website owns how it presents devlog entries — its file layout, front-matter shape, manifest schema, and numbering are **its** decisions, not the pipeline's. The pipeline meets the site through ONE module (an *adapter*) and a small interface:
 
 ```
-render(entry, metadata) -> list[FileChange]   # devlog markdown + regenerated site manifest
+render(entry, ctx) -> list[FileChange]
 ```
 
-The pipeline core knows only the interface. Supporting another site = writing another adapter. No site-specific logic anywhere else. `publish` (local and CI, via `--site-repo`) resolves the adapter named in `site.adapter`, calls `render`, and writes the resulting `FileChange`s into the website checkout — it never commits or pushes the website repo.
+- **`DevlogEntry`** — a site-neutral entry: `slug`, `title`, `body` (markdown, H1 included), `date` (YYYY-MM-DD), `type` (`weekly-activity` or `custom` — a real pipeline distinction), and `meta` (a dict for anything site- or pipeline-specific: weeklies pass `source_initiatives`; customs pass `kind` and an optional per-entry `series`). The core never hands the adapter a ready-made front-matter dict, so no producer-side (transform) decision can leak onto the published site.
+- **`RenderContext` (`ctx`)** — `site_dir` (the website's devlog dir) plus the pipeline `config`; the adapter reads whatever it needs from config, so no site vocabulary (e.g. "series") lives in the neutral interface.
+- **`FileChange`** — a `(path, content)` pair to write into the website checkout.
 
-### Manifest schema (`content/devlog/index.json`, owned by the website)
+The adapter composes **the entire site output** — the entry's markdown file *and* the regenerated manifest — and returns them as `FileChange`s. `publish` (local and CI, via `--site-repo`) resolves the adapter named in **`output.adapter`** (registered in `site_adapter/__init__.py`), calls `render`, and writes the returned changes into the checkout — it never commits or pushes the website repo. **Supporting another site = writing another adapter with a different `render`; no site-specific logic lives anywhere outside `site_adapter/`, and a fork may define any front-matter/manifest schema it likes.** The rest of this section documents the schema the *bundled* adapter happens to produce; it is an example, not a contract the pipeline imposes.
 
-`write_manifest` rebuilds the manifest from **every** front-mattered `.md` in the devlog dir, ordered by `date` (newest first) so weekly and custom entries interleave chronologically. Each entry has:
+### Reference adapter: `sporny_pl` (example implementation)
+
+This is what the shipped `sporny_pl` adapter produces for sporny.pl. A fork replaces all of it.
+
+**Manifest (`content/devlog/index.json`).** The adapter rebuilds the manifest from **every** front-mattered `.md` in the devlog dir (plus the entry currently being published), ordered by `date` (newest first) so weekly and custom entries interleave chronologically. Each entry has:
 
 | field    | source                                        | notes |
 |----------|-----------------------------------------------|-------|
 | `type`   | front matter `type`, default `weekly-activity`| `weekly-activity` (pipeline-generated) or `custom` (hand-authored) |
 | `series` | see below                                     | role identity, e.g. `Senior SDET log` — emitted **per entry** |
 | `n`      | see below                                     | per-series sequence number, **frozen once assigned** |
-| `slug`   | the `.md` filename without extension          | the entry id and page `#hash` anchor (renamed from the old `week` key) |
+| `slug`   | the `.md` filename without extension          | the entry id and page `#hash` anchor |
 | `title`  | front matter `title`                          | customs use it verbatim; weeklies hold a bare subtitle (the site prepends `<series> #N:`); the one legacy entry still carries its `#N` title, from which its `n` is backfilled |
 | `date`   | `published_at` (fallback `generated_at`)      | drives ordering and the "Published" line |
 | `kind`   | front matter `kind` (custom only, optional)   | kicker label; omitted ⇒ the page defaults to `Note` |
 
-**`series` per entry.** Weeklies emit the caller's configured current series (`content.devlog_title_prefix`); customs carry their own `series` in front matter. An entry's own recorded series — front matter, or a value already in the prior manifest — always wins, so history is **never rewritten** when the owner's role/series changes.
+**Site file front matter.** The adapter *composes* the site `<slug>.md` front matter for both kinds from the neutral entry — `type`, `series`, `slug`, `title`, `published_at`, `status: published`, optional `kind`, and (for weeklies) `source_initiatives` surfaced from `meta` as an explicit transparency choice. Draft-only keys (`generated_at`, `week`, …) stay in the pipeline's own `published/` record and never reach the site.
+
+**`series` per entry.** Weeklies emit the caller's configured current series (`content.devlog_title_prefix`); customs carry their own `series` (via `meta`) when the author set one. An entry's own recorded series — its front matter, or a value already in the prior manifest — always wins, so history is **never rewritten** when the owner's role/series changes.
 
 **`n` is one per-series sequence spanning weekly *and* custom entries**, frozen once assigned. Resolution order: reuse the value already in the prior manifest → else front matter `n` → else backfill from a legacy `#N` weekly title → else assign `max(n in that series) + 1` (walking entries oldest-first so assignment is deterministic). Because assigned values are read back from the prior manifest on the next run, numbers are idempotent across re-runs and never renumber when a backdated entry appears. A new series restarts its own sequence at 1.
 
-**Custom entries** are authored by hand directly in the website repo (see "Authoring a custom entry" below) and are **not** part of this pipeline's `raw/` → `transform` → `published/` flow. `write_manifest` never writes or deletes a custom `.md`; it maps front matter → manifest per the table and **skips any custom lacking `status: published`**.
+**Custom entries** are authored by hand directly in the website repo (see below) and are **not** part of this pipeline's `raw/` → `transform` → `published/` flow. The adapter never writes or deletes a custom `.md` on a plain manifest rebuild; it maps front matter → manifest per the table and **skips any custom lacking `status: published`**.
 
-### Authoring a custom entry (hand-written notes/essays)
+#### Authoring a custom entry (hand-written notes/essays)
 
-Custom entries are hand-written but the pipeline does the mechanical work (front matter + numbering + manifest). The number is **never** hand-set — `write_manifest` assigns it. To publish one:
+Custom entries are hand-written but the pipeline does the mechanical work (front matter + numbering + manifest). The number is **never** hand-set — the adapter assigns it. To publish one:
 
 1. Write a plain Markdown file anywhere, whose **first `# H1` is the entry title**, followed by the body:
    ```markdown
@@ -193,7 +203,7 @@ Custom entries are hand-written but the pipeline does the mechanical work (front
 
    <your essay…>
    ```
-2. Run `pipeline publish-custom <file.md> --site-repo <website checkout>` (options: `--slug` — defaults to the filename; `--kind` — kicker label, omit ⇒ the site shows "Note"; `--date` — defaults to today). It writes a complete `content/devlog/<slug>.md` into the website repo — `type: custom`, `series` (from `content.devlog_title_prefix`), `slug`, `title` (the H1), `published_at`, `status: published`, optional `kind`, and **no `n`** — then regenerates `index.json`, which assigns and freezes the per-series number. It prints the resulting `"<series> #N"`. The command is **file-only**: it never commits or pushes the website repo.
+2. Run `pipeline publish-custom <file.md> --site-repo <website checkout>` (options: `--slug` — defaults to the filename; `--kind` — kicker label, omit ⇒ the site shows "Note"; `--date` — defaults to today). The adapter writes a complete `content/devlog/<slug>.md` into the website repo — `type: custom`, `series`, `slug`, `title` (the H1), `published_at`, `status: published`, optional `kind`, and **no hand-set `n`** — then regenerates `index.json`, which assigns and freezes the per-series number. It prints the resulting `"<series> #N"`. The command is **file-only**: it never commits or pushes the website repo.
 3. Verify locally in the website repo (e.g. run the site's dev server), then commit + merge — Cloudflare deploys on merge, exactly like the weekly PR flow. Re-running `publish-custom` for the same slug updates the file in place and keeps the frozen number (it lives in the manifest, not the file).
 
 ## Module 5: Automation (CI)
