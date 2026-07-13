@@ -252,3 +252,11 @@ Public, building-in-public repo. Must include: data-flow diagram, the human-in-t
 5. CI workflow: cross-repo PR flow, bot commits, artifacts + README update.
 
 After each milestone: a working state, green tests, a commit.
+
+**Status (v0.2.0):** all five milestones delivered. Milestone 5 brought the weekly
+workflow into the memory era: the scheduled run auto-picks the lead thread (no TTY →
+no prompt), a `workflow_dispatch` `focus` input can override it for manual runs, and
+the Action now commits each week's `raw/` snapshot and `memory/` updates back to
+`main` as labeled bot commits — derived, regenerable state that must outlive the
+≤90-day workflow artifacts so continuity survives week to week. The website side is
+unchanged: the Action only *opens* a PR and never merges. Next: v0.3 (see roadmap).

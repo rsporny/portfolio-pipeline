@@ -108,6 +108,36 @@ run's short-lived workflow artifacts. A manual `workflow_dispatch` run accepts a
 optional `focus` input to lead the entry on specific thread(s); the scheduled run
 lets the model pick.
 
+## Running the weekly Action (fork setup)
+
+To run the automation on your own fork, set three **repository secrets** under
+*Settings → Secrets and variables → Actions → New repository secret*:
+
+| Secret | What | Scope to grant |
+| --- | --- | --- |
+| `ANTHROPIC_API_KEY` | Claude API key | — |
+| `GH_ACTIVITY_TOKEN` | Fine-grained PAT | **read-only** contents/PRs/issues on your allowlisted repos |
+| `LANDING_PAGE_TOKEN` | Fine-grained PAT | **write** on your website repo — enough to push a branch and open a PR, **never** merge |
+
+The token scopes are deliberately minimal: the pipeline reads only what you list
+in `config.yaml`, and the write token can propose but not publish — the merge
+stays a human action.
+
+Two more one-time changes so the Action targets *your* site, not mine:
+
+- **Website repo.** `.github/workflows/weekly.yml` references `rsporny/landing-page`
+  (the `repository:` and PR steps). Point these at your own website repo, and make
+  sure `output.adapter` in `config.yaml` resolves an adapter that renders *your*
+  site's schema (see [Fork it: write an adapter](#fork-it-write-an-adapter)).
+- **Bot-commit permission.** The workflow commits each week's `raw/` snapshot and
+  `memory/` updates back to your fork's `main`; its `permissions: contents: write`
+  block covers this **unless** your org/repo default is locked down. If pushes fail,
+  set *Settings → Actions → General → Workflow permissions* to *Read and write*.
+
+The schedule is a `cron` in `weekly.yml` (Sundays 16:00 UTC); adjust to taste, or
+trigger a run by hand from the Actions tab (*Run workflow*), optionally passing
+`since` for a backfill and `focus` to lead on specific thread(s).
+
 ## Sample draft
 
 A real Stage B devlog opening (from `2026-W27`):
