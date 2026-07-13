@@ -41,21 +41,25 @@ You may:
 - update an existing thread: revise its summary (2–4 sentences on where it now
   stands), change its status (ongoing | pivoted | done), mark one of its
   existing assumptions confirmed or falsified (match it by its EXACT text), or
-  add a new assumption — a dated, testable belief worth revisiting later
-  (optionally with a review_by ISO week);
+  add a new assumption — a testable belief worth revisiting later, recorded as
+  open (optionally with review_after_weeks: how many weeks from now to revisit
+  it, e.g. 8 — code turns that into a date, so never emit a week); a status is
+  only ever changed through assumption_updates on an assumption that already
+  exists;
 - create a new thread ONLY for work that clearly starts something ongoing.
 
-Do not invent weeks: code stamps the current week onto anything you touch or
-create. New thread ids must be kebab-case and must not collide with an existing
-id. Never reference a thread id that is not listed below.
+Weeks are not part of this schema: code stamps the current week onto everything
+you create or touch, so never emit a week field. New thread ids must be
+kebab-case and must not collide with an existing id. Never reference a thread id
+that is not listed below.
 
 Respond ONLY with valid JSON matching this schema:
 {"updates": [{"id", "summary"?, "status"?,
               "assumption_updates": [{"text", "status"}],
-              "new_assumptions": [{"text", "made_week", "status"?, "review_by"?}]}],
+              "new_assumptions": [{"text", "review_after_weeks"?}]}],
  "new_threads": [{"id", "title", "status"?, "summary"?,
-                  "assumptions": [{"text", "made_week", "status"?, "review_by"?}],
-                  "key_decisions": [{"week", "decision", "rationale"}]}]}"""
+                  "assumptions": [{"text", "review_after_weeks"?}],
+                  "key_decisions": [{"decision", "rationale"}]}]}"""
 
 
 STAGE_B_SYSTEM = """You are helping a senior SDET (15 years in test automation) write about his

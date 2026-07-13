@@ -1,10 +1,21 @@
 from __future__ import annotations
 
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Literal
 
 import yaml
 from pydantic import BaseModel, Field
+
+
+def add_weeks(week: str, n: int) -> str:
+    """Add ``n`` ISO weeks to an ISO-week string (``YYYY-Www``), returning the
+    same ``YYYY-Www`` format. Real calendar arithmetic, so year boundaries and
+    53-week years are handled correctly."""
+    year_str, _, week_str = week.partition("-W")
+    monday = date.fromisocalendar(int(year_str), int(week_str), 1)
+    iso = (monday + timedelta(weeks=n)).isocalendar()
+    return f"{iso.year}-W{iso.week:02d}"
 
 # --- schema (mirrors memory/{org}/{repo}/threads.yaml) ----------------------
 
@@ -14,13 +25,15 @@ ThreadStatus = Literal["ongoing", "pivoted", "done"]
 
 class Assumption(BaseModel):
     text: str
-    made_week: str
+    # Stamped by apply_mutations when omitted; the indexer model may leave it "".
+    made_week: str = ""
     status: AssumptionStatus = "open"
     review_by: str | None = None
 
 
 class KeyDecision(BaseModel):
-    week: str
+    # Stamped by apply_mutations when omitted; the indexer model may leave it "".
+    week: str = ""
     decision: str
     rationale: str
 
@@ -58,17 +71,71 @@ class AssumptionUpdate(BaseModel):
     status: AssumptionStatus
 
 
+# The indexer proposes assumptions / decisions / threads carrying ONLY the fields
+# it genuinely decides. Code-owned or derived fields are deliberately absent from
+# the proposal contract so the model cannot set them (hard constraint 6): the week
+# (code stamps the current one), a new assumption's status (always "open" —
+# confirming/falsifying happens later via assumption_updates on an existing one),
+# and the review_by DATE (the model proposes a horizon in weeks; code computes the
+# absolute week from it — the model is unreliable at ISO-week arithmetic).
+# apply_mutations converts these into the real Assumption / KeyDecision / Thread.
+
+
+class ProposedAssumption(BaseModel):
+    text: str
+    # How many weeks from now to revisit this belief; code turns it into an
+    # absolute review_by week. A non-positive/absent value means no review.
+    review_after_weeks: int | None = None
+
+    def stamp(self, week: str) -> Assumption:
+        review_by = (
+            add_weeks(week, self.review_after_weeks)
+            if self.review_after_weeks and self.review_after_weeks > 0
+            else None
+        )
+        return Assumption(text=self.text, made_week=week, review_by=review_by)
+
+
+class ProposedKeyDecision(BaseModel):
+    decision: str
+    rationale: str
+
+    def stamp(self, week: str) -> KeyDecision:
+        return KeyDecision(week=week, decision=self.decision, rationale=self.rationale)
+
+
+class ProposedThread(BaseModel):
+    id: str
+    title: str
+    status: ThreadStatus = "ongoing"
+    summary: str = ""
+    assumptions: list[ProposedAssumption] = Field(default_factory=list)
+    key_decisions: list[ProposedKeyDecision] = Field(default_factory=list)
+
+    def stamp(self, week: str) -> Thread:
+        return Thread(
+            id=self.id,
+            title=self.title,
+            status=self.status,
+            started_week=week,
+            last_active_week=week,
+            summary=self.summary,
+            assumptions=[a.stamp(week) for a in self.assumptions],
+            key_decisions=[d.stamp(week) for d in self.key_decisions],
+        )
+
+
 class ThreadUpdate(BaseModel):
     id: str  # must reference an existing thread
     summary: str | None = None
     status: ThreadStatus | None = None
     assumption_updates: list[AssumptionUpdate] = Field(default_factory=list)
-    new_assumptions: list[Assumption] = Field(default_factory=list)
+    new_assumptions: list[ProposedAssumption] = Field(default_factory=list)
 
 
 class IndexerMutations(BaseModel):
     updates: list[ThreadUpdate] = Field(default_factory=list)
-    new_threads: list[Thread] = Field(default_factory=list)
+    new_threads: list[ProposedThread] = Field(default_factory=list)
 
 
 class MemoryValidationError(RuntimeError):
@@ -136,7 +203,7 @@ def apply_mutations(
                     f"assumption {change.text!r} not found on thread {update.id!r}"
                 )
             assumption.status = change.status
-        thread.assumptions.extend(a.model_copy(deep=True) for a in update.new_assumptions)
+        thread.assumptions.extend(proposed.stamp(week) for proposed in update.new_assumptions)
         thread.last_active_week = week  # touched this week
 
     seen_new: set[str] = set()
@@ -144,10 +211,7 @@ def apply_mutations(
         if new_thread.id in by_id or new_thread.id in seen_new:
             raise MemoryValidationError(f"new thread id {new_thread.id!r} already exists")
         seen_new.add(new_thread.id)
-        created = new_thread.model_copy(deep=True)
-        created.started_week = created.started_week or week
-        created.last_active_week = week
-        result.threads.append(created)
+        result.threads.append(new_thread.stamp(week))
 
     return result
 

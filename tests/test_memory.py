@@ -7,9 +7,13 @@ from pipeline.memory import (
     Assumption,
     IndexerMutations,
     MemoryValidationError,
+    ProposedAssumption,
+    ProposedKeyDecision,
+    ProposedThread,
     Thread,
     ThreadRegistry,
     ThreadUpdate,
+    add_weeks,
     apply_mutations,
     load_context,
     load_registry,
@@ -117,7 +121,7 @@ def test_apply_assumption_status_change_and_new_assumption():
             ThreadUpdate(
                 id="collector",
                 assumption_updates=[{"text": "Diffs unneeded", "status": "falsified"}],
-                new_assumptions=[Assumption(text="Search API is enough", made_week="2026-W29")],
+                new_assumptions=[ProposedAssumption(text="Search API is enough")],
             )
         ]
     )
@@ -125,22 +129,98 @@ def test_apply_assumption_status_change_and_new_assumption():
     assumptions = out.get("collector").assumptions
     assert assumptions[0].status == "falsified"
     assert assumptions[1].text == "Search API is enough"
+    assert assumptions[1].made_week == "2026-W29"  # stamped by code, not the model
 
 
-def test_apply_new_thread_defaults_weeks():
+def test_apply_new_thread_stamps_weeks():
     reg = ThreadRegistry()
-    new = Thread(
-        id="memory-module",
-        title="Memory",
-        status="ongoing",
-        started_week="",
-        last_active_week="",
-        summary="Threads + assumptions.",
-    )
+    new = ProposedThread(id="memory-module", title="Memory", summary="Threads + assumptions.")
     out = apply_mutations(reg, IndexerMutations(new_threads=[new]), week="2026-W29")
     created = out.get("memory-module")
     assert created.started_week == "2026-W29"
     assert created.last_active_week == "2026-W29"
+
+
+def test_new_thread_proposal_carries_no_weeks_and_is_stamped():
+    """Regression (W28 midnight-node): the indexer proposes assumptions and
+    key_decisions with NO week field — the week is not part of its contract, so
+    it cannot send a null or a stray boolean there. The proposal validates and
+    apply_mutations stamps the run week into every nested record."""
+    # The proposal models expose only genuinely-editorial fields: no week (code
+    # stamps it), no status on a new assumption (always born "open"), and no
+    # review_by date (code derives it from a horizon in weeks).
+    assert "made_week" not in ProposedAssumption.model_fields
+    assert "status" not in ProposedAssumption.model_fields
+    assert "review_by" not in ProposedAssumption.model_fields
+    assert "week" not in ProposedKeyDecision.model_fields
+
+    new = ProposedThread(
+        id="bridge-network",
+        title="Bridge-funded local network",
+        assumptions=[ProposedAssumption(text="Bridge is reproducible locally")],
+        key_decisions=[ProposedKeyDecision(decision="Use earthly", rationale="Containerized")],
+    )
+    out = apply_mutations(ThreadRegistry(), IndexerMutations(new_threads=[new]), week="2026-W28")
+    created = out.get("bridge-network")
+    assert created.assumptions[0].made_week == "2026-W28"
+    assert created.key_decisions[0].week == "2026-W28"
+
+
+def test_indexer_mutations_validate_from_json_without_weeks():
+    """The real path: mutations arrive as parsed JSON with no week keys (as the
+    prompt now instructs). model_validate must accept it — this is exactly the
+    payload that used to raise before the proposal contract dropped the fields."""
+    data = {
+        "new_threads": [
+            {
+                "id": "t",
+                "title": "T",
+                # a stray code-owned field (made_week / an invented status) must be
+                # ignored, not crash the whole proposal — resilience, not fragility.
+                "assumptions": [{"text": "a", "made_week": True, "status": "proposed"}],
+                "key_decisions": [{"decision": "d", "rationale": "r"}],
+            }
+        ]
+    }
+    muts = IndexerMutations.model_validate(data)  # must not raise
+    out = apply_mutations(ThreadRegistry(), muts, week="2026-W28")
+    created = out.get("t")
+    assert created.assumptions[0].made_week == "2026-W28"
+    assert created.assumptions[0].status == "open"  # stray "proposed" dropped
+    assert created.key_decisions[0].week == "2026-W28"
+
+
+def test_add_weeks_arithmetic_and_year_boundary():
+    assert add_weeks("2026-W28", 8) == "2026-W36"
+    assert add_weeks("2026-W28", 0) == "2026-W28"
+    # real calendar math, not string surgery: 2026 is a 53-week ISO year,
+    assert add_weeks("2026-W50", 3) == "2026-W53"  # so W53 exists,
+    assert add_weeks("2026-W53", 1) == "2027-W01"  # and W53+1 rolls into 2027.
+    # 2025 is a 52-week year — its boundary lands one week earlier:
+    assert add_weeks("2025-W52", 2) == "2026-W02"
+
+
+def test_review_after_weeks_becomes_future_review_by():
+    """The horizon fix: the model proposes weeks-from-now; code turns it into an
+    absolute review_by strictly AFTER made_week (never a past date, W28 bug)."""
+    new = ProposedThread(
+        id="t",
+        title="T",
+        assumptions=[ProposedAssumption(text="a", review_after_weeks=8)],
+    )
+    out = apply_mutations(ThreadRegistry(), IndexerMutations(new_threads=[new]), week="2026-W28")
+    assumption = out.get("t").assumptions[0]
+    assert assumption.review_by == "2026-W36"
+    assert assumption.review_by > assumption.made_week
+
+
+def test_no_horizon_means_no_review():
+    for horizon in (None, 0, -3):
+        proposed = ProposedAssumption(text="a", review_after_weeks=horizon)
+        new = ProposedThread(id="t", title="T", assumptions=[proposed])
+        muts = IndexerMutations(new_threads=[new])
+        out = apply_mutations(ThreadRegistry(), muts, week="2026-W28")
+        assert out.get("t").assumptions[0].review_by is None
 
 
 def test_apply_rejects_unknown_thread():
@@ -167,7 +247,7 @@ def test_apply_rejects_unknown_assumption():
 
 def test_apply_rejects_duplicate_new_thread():
     reg = ThreadRegistry(threads=[_thread(id="collector")])
-    dup = _thread(id="collector")
+    dup = ProposedThread(id="collector", title="GitHub collector")
     with pytest.raises(MemoryValidationError, match="already exists"):
         apply_mutations(reg, IndexerMutations(new_threads=[dup]), week="2026-W29")
 

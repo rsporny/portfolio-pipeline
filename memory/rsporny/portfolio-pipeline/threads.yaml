@@ -1,0 +1,69 @@
+threads:
+- id: content-pipeline-memory
+  title: Content pipeline memory & thread continuity
+  status: ongoing
+  started_week: 2026-W28
+  last_active_week: 2026-W28
+  summary: Per-repository memory subsystem that connects weekly pipeline outputs into
+    longer narrative arcs. A pydantic-backed thread registry (threads, assumptions,
+    key decisions) with load/save and a deterministic 'model proposes, code disposes'
+    mutation step validates every AI-suggested change, rejecting unknown thread ids
+    or colliding entries before committing. The summarization stage loads active repo
+    context and links initiatives to known threads via typed continues/pivots/concludes/contradicts
+    relations, with graceful fallback when the indexer fails. Hand-written context
+    cards were seeded for allowlisted repos, and raw activity snapshots are committed
+    as a versioned, auditable source of truth. Work continues this week refining the
+    validation boundary and thread-linking behavior.
+  assumptions:
+  - text: The deterministic apply-and-validate boundary is sufficient to prevent the
+      model from corrupting persistent thread state.
+    made_week: current
+    status: open
+  - text: Typed continues/pivots/concludes/contradicts relations are expressive enough
+      to capture how weekly initiatives connect to existing threads.
+    made_week: current
+    status: open
+  - text: Graceful fallback when the indexer fails keeps memory strictly optional,
+      so a broken registry never blocks the content-writing stage.
+    made_week: 2026-W28
+    status: open
+  key_decisions:
+  - week: current
+    decision: Adopt a 'model proposes, code disposes' architecture where AI suggests
+      thread mutations and deterministic code validates and applies them.
+    rationale: Gives generated content continuity and auditability without letting
+      the LLM directly mutate persistent state.
+- id: site-adapter-publishing
+  title: Site adapter extraction & unified publishing
+  status: ongoing
+  started_week: 2026-W28
+  last_active_week: 2026-W28
+  summary: Publishing stage sits behind a neutral SiteAdapter protocol so all site-specific
+    knowledge (layout, manifest schema, per-series numbering) lives behind an interface
+    rather than leaking into the core. DevlogEntry is site-neutral and symmetric across
+    entry kinds, with the adapter composing the full site output (front matter + manifest).
+    The manifest is the single authority for entry numbering so weekly and manual
+    entries share one collision-free per-series sequence, and a publish-custom command
+    turns plain Markdown into a published entry without hand-written front matter.
+    This week closed the editorial loop with a review/publish flow, and a weekly GitHub
+    Action opens a PR against the website repo while keeping a human merge as the
+    publish gate.
+  assumptions:
+  - text: The SiteAdapter protocol boundary is neutral enough that the pipeline core
+      stays free of domain vocabulary and remains forkable.
+    made_week: current
+    status: open
+  - text: Making the manifest the single authority for entry numbering eliminates
+      ordering/duplication bugs across weekly and manual entries.
+    made_week: current
+    status: open
+  - text: Having the adapter compose the entire site output keeps transform-stage
+      metadata from ever leaking into the published site.
+    made_week: 2026-W28
+    status: open
+  key_decisions:
+  - week: current
+    decision: Keep a human merge as the publish gate via a weekly GitHub Action that
+      opens a PR against the website repo.
+    rationale: Automates editorial prep while preserving human oversight before anything
+      is published.
