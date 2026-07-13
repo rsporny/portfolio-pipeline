@@ -27,6 +27,7 @@ def weeks_between(earlier: str, later: str) -> int:
     when ``later`` is after ``earlier``, 0 for the same week, negative if reversed."""
     return (_week_monday(later) - _week_monday(earlier)).days // 7
 
+
 # --- schema (mirrors memory/{org}/{repo}/threads.yaml) ----------------------
 
 AssumptionStatus = Literal["open", "confirmed", "falsified"]
