@@ -379,8 +379,10 @@ def test_transform_title_prompt_carries_no_number(tmp_path):
     )
 
     # Stage B is the third model call now (A → indexer → B). Its prompt instructs
-    # a bare subtitle and injects no per-run number.
-    assert "no series name and no number" in llm.prompts[2]
+    # a bare subtitle and injects no per-run number (assert wrap-independently).
+    stage_b = llm.prompts[2]
+    assert "no series name" in stage_b
+    assert "no number" in stage_b
     devlog = (out_dir / "devlog.md").read_text()
     assert "# Wiring commits into a content pipeline" in devlog  # title used verbatim
 
@@ -612,7 +614,9 @@ def test_focus_selector_directs_stage_b(tmp_path):
     # The just-created thread is active this week and thus a candidate.
     assert offered["ids"] == ["collector-rewrite"]
     stage_b = llm.prompts[-1]
-    assert "Focus directive" in stage_b
+    # Marker unique to the injected block (the system prompt also says the words
+    # "Focus directive" when describing the feature).
+    assert "covers ONLY these threads" in stage_b
     assert "Collector rewrite" in stage_b
 
 
@@ -647,4 +651,58 @@ def test_no_focus_selector_leaves_stage_b_unforced(tmp_path):
         _config(), llm, raw_dir=raw_dir, drafts_dir=drafts_dir, week=week, memory_root=memory_root
     )
 
-    assert "Focus directive" not in llm.prompts[-1]
+    assert "covers ONLY these threads" not in llm.prompts[-1]
+
+
+def test_focus_directive_follows_picked_order(tmp_path):
+    """The directive lists threads in the order the caller picked (not candidate
+    order), and names the first pick as the primary — so '4,3,1' leads on 4."""
+    raw_dir, drafts_dir = tmp_path / "raw", tmp_path / "drafts"
+    memory_root = tmp_path / "memory"
+    week = _write_activity(raw_dir)
+    new_threads = [
+        {"id": "alpha", "title": "Alpha work", "summary": "a"},
+        {"id": "beta", "title": "Beta work", "summary": "b"},
+    ]
+    llm = _FakeLLM([_stage_a(), _indexer(new_threads=new_threads), _stage_b()])
+
+    transform_week(
+        _config(),
+        llm,
+        raw_dir=raw_dir,
+        drafts_dir=drafts_dir,
+        week=week,
+        memory_root=memory_root,
+        focus_selector=lambda candidates: ["beta", "alpha"],  # reverse of candidate order
+    )
+
+    stage_b = llm.prompts[-1]
+    # Primary is the first pick, and Beta is listed before Alpha.
+    assert 'the primary, "Beta work"' in stage_b
+    assert stage_b.index('1. "Beta work"') < stage_b.index('2. "Alpha work"')
+
+
+def test_focus_directive_restricts_and_asks_per_topic_proof(tmp_path):
+    """The directive tells Stage B to cover only the picked threads, give each its
+    own proof-of-work link, and not force a single narrative."""
+    raw_dir, drafts_dir = tmp_path / "raw", tmp_path / "drafts"
+    memory_root = tmp_path / "memory"
+    week = _write_activity(raw_dir)
+    new_thread = {"id": "alpha", "title": "Alpha work", "summary": "a"}
+    llm = _FakeLLM([_stage_a(), _indexer(new_threads=[new_thread]), _stage_b()])
+
+    transform_week(
+        _config(),
+        llm,
+        raw_dir=raw_dir,
+        drafts_dir=drafts_dir,
+        week=week,
+        memory_root=memory_root,
+        focus_selector=lambda candidates: ["alpha"],
+    )
+
+    stage_b = llm.prompts[-1]
+    assert "covers ONLY these threads" in stage_b
+    assert "own proof-of-work link" in stage_b
+    assert "not listed here" in stage_b
+    assert "separate things done this week" in stage_b

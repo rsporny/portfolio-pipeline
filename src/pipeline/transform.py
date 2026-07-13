@@ -203,15 +203,23 @@ def _active_threads(memories: list[RepoMemory], week: str) -> list[Thread]:
 
 
 def _render_focus(selected: list[Thread]) -> str:
-    """A Stage B directive naming the thread(s) the entry must lead on. Empty when
-    nothing is selected — the model then picks the lead itself (default)."""
+    """A Stage B directive naming the thread(s) the entry covers, in the caller's
+    chosen order — the first is the primary lead. Empty when nothing is selected —
+    the model then picks the lead itself over the whole week (default)."""
     if not selected:
         return ""
-    titles = "; ".join(f'"{t.title}"' for t in selected)
+    listed = "\n".join(f'{i}. "{t.title}"' for i, t in enumerate(selected, 1))
+    primary = selected[0].title
     return (
-        "Focus directive: center the title, the opening paragraph, and the social "
-        f"post on this week's work on {titles}. Still cover the week's other "
-        "initiatives, but briefly (a sentence or two each) — the focus leads."
+        "Focus directive — the entry covers ONLY these threads, in this order (the "
+        "first is the primary):\n"
+        f"{listed}\n\n"
+        f'The title and opening center on the primary, "{primary}". Give each listed '
+        "thread its own section (the primary the deepest), and end each section with "
+        "that work's own proof-of-work link taken from the matching initiative below. "
+        "Do NOT write up any initiative that is not listed here. Do not strain to tie "
+        "the topics into one narrative — they can simply be separate things done this "
+        "week."
     )
 
 
@@ -372,7 +380,9 @@ def transform_week(
             f"focus references thread id(s) not active this week: {', '.join(unknown)}. "
             f"Active this week: {', '.join(sorted(candidate_ids)) or '(none)'}"
         )
-    focus = _render_focus([t for t in candidates if t.id in selected_ids])
+    # Preserve the order the caller picked — the first is the primary lead.
+    by_id = {t.id: t for t in candidates}
+    focus = _render_focus([by_id[tid] for tid in selected_ids])
 
     # Stage B — writing, thread-aware (redact the Stage A output too).
     # The devlog number is assigned by the site adapter's manifest, not here —
