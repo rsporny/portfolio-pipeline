@@ -34,12 +34,36 @@ def strip_fences(text: str) -> str:
     return text.strip()
 
 
+def _salvage_json_object(text: str) -> dict[str, Any] | None:
+    """Extract the first JSON *object* from ``text`` when the model wrapped it in
+    prose or appended a note despite being told to emit JSON only (a common LLM
+    slip — e.g. a valid object followed by an explanatory "Note: …"). Scans each
+    ``{`` and returns the first one that decodes to a dict, ignoring any trailing
+    data. Returns None if there is no parseable object."""
+    decoder = json.JSONDecoder()
+    idx = text.find("{")
+    while idx != -1:
+        try:
+            obj, _ = decoder.raw_decode(text, idx)
+        except json.JSONDecodeError:
+            obj = None
+        if isinstance(obj, dict):
+            return obj
+        idx = text.find("{", idx + 1)
+    return None
+
+
 def parse_json_response(text: str) -> dict[str, Any]:
     cleaned = strip_fences(text)
     try:
         data = json.loads(cleaned)
     except json.JSONDecodeError as exc:
-        raise TransformError(f"Model response is not valid JSON: {exc}", raw=text) from exc
+        # The model emitted a valid object with prose/extra data around it —
+        # salvage the object rather than losing the whole response.
+        data = _salvage_json_object(cleaned)
+        if data is None:
+            raise TransformError(f"Model response is not valid JSON: {exc}", raw=text) from exc
+        logger.warning("Recovered a JSON object from a response with extra data around it")
     if not isinstance(data, dict):
         raise TransformError("Model response JSON is not an object", raw=text)
     return data

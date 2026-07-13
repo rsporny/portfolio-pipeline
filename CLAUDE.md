@@ -35,7 +35,7 @@ This is a building-in-public project: a practical experiment in wiring AI into a
 ## Commands
 
 - `uv run pipeline collect` — fetch activity from the last 7 days (or `--since`)
-- `uv run pipeline transform` — Stage A → indexer → Stage B, writes drafts and memory updates
+- `uv run pipeline transform` — Stage A → indexer → Stage B, writes drafts and memory updates. Add `--focus <thread-id>` (repeatable) to lead the entry on specific thread(s); omit it for an interactive pick (a non-interactive run auto-picks)
 - `uv run pipeline run` — collect + transform
 - `uv run pipeline review` — list drafts awaiting review (local/offline flow)
 - `uv run pipeline publish --site-repo <path>` — render via the site adapter into a website checkout (used by CI and locally)

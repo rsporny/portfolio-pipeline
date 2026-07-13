@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import sys
+from collections.abc import Callable
 
 import typer
 
@@ -8,6 +10,7 @@ from .collect import collect_activity, write_activity
 from .config import Config, load_config
 from .github import GitHubClient
 from .llm import LLMClient, TransformError
+from .memory import Thread
 from .models import Activity
 from .publish import PublishError, publish_approved, publish_custom
 from .review import list_drafts
@@ -21,6 +24,12 @@ CONFIG_OPTION = typer.Option("config.yaml", "--config", help="Path to config.yam
 SINCE_OPTION = typer.Option(None, help="Start date ISO-8601 (YYYY-MM-DD)")
 UNTIL_OPTION = typer.Option(None, help="End date ISO-8601 (YYYY-MM-DD)")
 WEEK_OPTION = typer.Option(None, "--week", help="Target ISO week (YYYY-Wnn); default: newest")
+FOCUS_OPTION = typer.Option(
+    None,
+    "--focus",
+    help="Thread id to lead the entry on (repeatable). Omit to pick interactively; "
+    "a non-interactive run auto-picks.",
+)
 DRY_RUN_OPTION = typer.Option(False, "--dry-run", help="Preview without writing files")
 SITE_REPO_OPTION = typer.Option(
     None, "--site-repo", help="Override output.site_repo_path (e.g. a CI checkout)"
@@ -30,10 +39,59 @@ KIND_OPTION = typer.Option(None, "--kind", help="Kicker label (default: site sho
 DATE_OPTION = typer.Option(None, "--date", help="Published date YYYY-MM-DD (default: today)")
 
 
-def _transform(cfg: Config, week: str | None) -> None:
+def _focus_from_flag(focus: list[str], candidates: list[Thread]) -> list[str]:
+    """Validate ``--focus`` ids against the threads active this week; a bad id is a
+    hard error (exact-id contract) that lists the valid options."""
+    ids = {t.id for t in candidates}
+    unknown = [f for f in focus if f not in ids]
+    if unknown:
+        typer.echo(f"unknown --focus thread id(s): {', '.join(unknown)}", err=True)
+        typer.echo(f"active this week: {', '.join(sorted(ids)) or '(none)'}", err=True)
+        raise typer.Exit(1)
+    return focus
+
+
+def _focus_interactively(candidates: list[Thread]) -> list[str]:
+    """Print the threads active this week and let the user pick which lead the
+    entry. Empty input means auto (the model picks)."""
+    if not candidates:
+        return []
+    typer.echo(f"\nThreads active this week ({len(candidates)}):")
+    for i, thread in enumerate(candidates, 1):
+        typer.echo(f"  [{i}] {thread.title} ({thread.id})")
+    raw = typer.prompt(
+        "Focus which? (comma-separated numbers, empty = let the model pick)",
+        default="",
+        show_default=False,
+    )
+    picks: list[str] = []
+    for part in raw.replace(" ", "").split(","):
+        if not part:
+            continue
+        if not part.isdigit() or not 1 <= int(part) <= len(candidates):
+            typer.echo(f"ignoring invalid selection: {part!r}", err=True)
+            continue
+        tid = candidates[int(part) - 1].id
+        if tid not in picks:
+            picks.append(tid)
+    return picks
+
+
+def _make_focus_selector(focus: list[str] | None) -> Callable[[list[Thread]], list[str]] | None:
+    """Resolve how the entry's focus is chosen: an explicit ``--focus`` (validated),
+    an interactive prompt on a TTY, or auto (``None``) for non-interactive runs
+    such as CI so they never block."""
+    if focus:
+        return lambda candidates: _focus_from_flag(focus, candidates)
+    if sys.stdin.isatty():
+        return _focus_interactively
+    return None
+
+
+def _transform(cfg: Config, week: str | None, focus: list[str] | None = None) -> None:
     llm = LLMClient(model=cfg.anthropic.model, max_tokens=cfg.anthropic.max_tokens)
     try:
-        out_dir = transform_week(cfg, llm, week=week)
+        out_dir = transform_week(cfg, llm, week=week, focus_selector=_make_focus_selector(focus))
     except (TransformError, FileNotFoundError) as exc:
         typer.echo(f"transform failed: {exc}", err=True)
         raise typer.Exit(1) from exc
@@ -67,15 +125,20 @@ def collect(
 
 
 @app.command()
-def transform(week: str | None = WEEK_OPTION, config: str = CONFIG_OPTION) -> None:
+def transform(
+    week: str | None = WEEK_OPTION,
+    focus: list[str] | None = FOCUS_OPTION,
+    config: str = CONFIG_OPTION,
+) -> None:
     """Run two-stage AI transformation on collected activity, write drafts."""
-    _transform(load_config(config), week)
+    _transform(load_config(config), week, focus)
 
 
 @app.command()
 def run(
     since: str | None = SINCE_OPTION,
     until: str | None = UNTIL_OPTION,
+    focus: list[str] | None = FOCUS_OPTION,
     config: str = CONFIG_OPTION,
 ) -> None:
     """Collect + transform in sequence."""
@@ -84,7 +147,7 @@ def run(
         activity = collect_activity(cfg, client, since, until)
     out_path = write_activity(activity)
     _report(activity, out_path)
-    _transform(cfg, activity.week)
+    _transform(cfg, activity.week, focus)
 
 
 @app.command()

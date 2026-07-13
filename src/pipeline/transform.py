@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -22,6 +23,7 @@ from .memory import (
     repo_memory_dir,
     reviews_due,
     save_registry,
+    weeks_between,
 )
 from .models import Activity, Content, Initiatives
 from .prompts import indexer_prompt, stage_a_prompt, stage_b_prompt
@@ -122,10 +124,25 @@ def _find_thread(memories: list[RepoMemory], thread_id: str) -> Thread | None:
     return None
 
 
+def _thread_timing(thread: Thread, week: str) -> str:
+    """How a referenced thread sits in time relative to the entry's own week. A
+    thread that began this week is being introduced now (present tense, not
+    history); only an older thread warrants "started N weeks ago" continuity."""
+    if thread.started_week == week or not thread.started_week:
+        return (
+            "New this week — introduce it in the present; this is its first entry, "
+            "not prior history."
+        )
+    ago = weeks_between(thread.started_week, week)
+    span = "1 week ago" if ago == 1 else f"{ago} weeks ago"
+    return f"Started {thread.started_week} ({span})"
+
+
 def _render_thread_context(
     initiatives: Initiatives,
     memories: list[RepoMemory],
     due: list[tuple[str, Assumption]],
+    week: str,
 ) -> str:
     """Stage B thread brief: the threads this week's initiatives reference (with
     the stated relation) plus any assumptions now due for review."""
@@ -144,7 +161,7 @@ def _render_thread_context(
         referenced.append(thread.id)
         lines.append(
             f'- "{thread.title}" (id: {thread.id}) — this week {ref.relation} it. '
-            f"Started {thread.started_week}, status {thread.status}."
+            f"{_thread_timing(thread, week)}, status {thread.status}."
         )
         if thread.summary:
             lines.append(f"  Where it stood: {thread.summary}")
@@ -176,6 +193,26 @@ def _render_thread_context(
             + "\n".join(due_lines)
         )
     return "\n\n".join(blocks)
+
+
+def _active_threads(memories: list[RepoMemory], week: str) -> list[Thread]:
+    """Threads the indexer created or touched this week — the candidates a human
+    can pick from to focus the entry (``apply_mutations`` stamps
+    ``last_active_week = week`` on every thread it creates or touches)."""
+    return [t for mem in memories for t in mem.registry.threads if t.last_active_week == week]
+
+
+def _render_focus(selected: list[Thread]) -> str:
+    """A Stage B directive naming the thread(s) the entry must lead on. Empty when
+    nothing is selected — the model then picks the lead itself (default)."""
+    if not selected:
+        return ""
+    titles = "; ".join(f'"{t.title}"' for t in selected)
+    return (
+        "Focus directive: center the title, the opening paragraph, and the social "
+        f"post on this week's work on {titles}. Still cover the week's other "
+        "initiatives, but briefly (a sentence or two each) — the focus leads."
+    )
 
 
 def _write_failed(out_dir: Path, raw: str, name: str = "_failed_raw.txt") -> Path:
@@ -278,10 +315,16 @@ def transform_week(
     drafts_dir: Path | str = "drafts",
     week: str | None = None,
     memory_root: Path | str | None = None,
+    focus_selector: Callable[[list[Thread]], list[str]] | None = None,
 ) -> Path:
     """Run redaction → Stage A (memory-aware) → indexer → Stage B (thread-aware)
     and write the draft bundle for a week. Memory mutations are applied to the
-    working tree under ``memory_root`` (default: ``config.memory.root``)."""
+    working tree under ``memory_root`` (default: ``config.memory.root``).
+
+    ``focus_selector`` (optional) is called after the indexer with the threads
+    active this week and returns the ids the entry should lead on; the caller owns
+    how they are chosen (interactive prompt, ``--focus`` flag, …). Omitted or an
+    empty return means the model picks the lead itself."""
     if week:
         activity_path = Path(raw_dir) / week / "activity.json"
         if not activity_path.exists():
@@ -319,13 +362,25 @@ def transform_week(
             logger.info("Indexer updated memory → %s", path)
     due = [pair for mem in memories for pair in reviews_due(mem.registry, week)]
 
+    # Focus — let the caller pick which thread(s) this week's entry leads on.
+    candidates = _active_threads(memories, week)
+    selected_ids = list(focus_selector(candidates)) if focus_selector else []
+    candidate_ids = {t.id for t in candidates}
+    unknown = [tid for tid in selected_ids if tid not in candidate_ids]
+    if unknown:
+        raise TransformError(
+            f"focus references thread id(s) not active this week: {', '.join(unknown)}. "
+            f"Active this week: {', '.join(sorted(candidate_ids)) or '(none)'}"
+        )
+    focus = _render_focus([t for t in candidates if t.id in selected_ids])
+
     # Stage B — writing, thread-aware (redact the Stage A output too).
     # The devlog number is assigned by the site adapter's manifest, not here —
     # the title is a bare subtitle and the site renders "<series> #N:".
-    thread_context = _render_thread_context(initiatives, memories, due)
+    thread_context = _render_thread_context(initiatives, memories, due, week)
     redacted_b, n_b = redact(initiatives.model_dump_json(indent=2), phrases)
     logger.info("Stage B: %d phrase occurrence(s) redacted before the API call", n_b)
-    content = _generate(llm, stage_b_prompt(redacted_b, thread_context), Content, out_dir)
+    content = _generate(llm, stage_b_prompt(redacted_b, thread_context, focus), Content, out_dir)
     assert isinstance(content, Content)
 
     generated_at = datetime.now(UTC).isoformat()

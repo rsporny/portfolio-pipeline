@@ -20,6 +20,7 @@ from pipeline.memory import (
     repo_memory_dir,
     reviews_due,
     save_registry,
+    weeks_between,
 )
 
 
@@ -198,6 +199,13 @@ def test_add_weeks_arithmetic_and_year_boundary():
     assert add_weeks("2026-W53", 1) == "2027-W01"  # and W53+1 rolls into 2027.
     # 2025 is a 52-week year — its boundary lands one week earlier:
     assert add_weeks("2025-W52", 2) == "2026-W02"
+
+
+def test_weeks_between():
+    assert weeks_between("2026-W25", "2026-W27") == 2
+    assert weeks_between("2026-W28", "2026-W28") == 0
+    assert weeks_between("2025-W52", "2026-W01") == 1  # 52-week year boundary
+    assert weeks_between("2026-W27", "2026-W25") == -2  # reversed → negative
 
 
 def test_review_after_weeks_becomes_future_review_by():

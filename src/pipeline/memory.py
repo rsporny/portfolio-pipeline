@@ -8,14 +8,24 @@ import yaml
 from pydantic import BaseModel, Field
 
 
+def _week_monday(week: str) -> date:
+    """The Monday of an ISO-week string (``YYYY-Www``)."""
+    year_str, _, week_str = week.partition("-W")
+    return date.fromisocalendar(int(year_str), int(week_str), 1)
+
+
 def add_weeks(week: str, n: int) -> str:
     """Add ``n`` ISO weeks to an ISO-week string (``YYYY-Www``), returning the
     same ``YYYY-Www`` format. Real calendar arithmetic, so year boundaries and
     53-week years are handled correctly."""
-    year_str, _, week_str = week.partition("-W")
-    monday = date.fromisocalendar(int(year_str), int(week_str), 1)
-    iso = (monday + timedelta(weeks=n)).isocalendar()
+    iso = (_week_monday(week) + timedelta(weeks=n)).isocalendar()
     return f"{iso.year}-W{iso.week:02d}"
+
+
+def weeks_between(earlier: str, later: str) -> int:
+    """Whole ISO weeks from ``earlier`` to ``later`` (both ``YYYY-Www``). Positive
+    when ``later`` is after ``earlier``, 0 for the same week, negative if reversed."""
+    return (_week_monday(later) - _week_monday(earlier)).days // 7
 
 # --- schema (mirrors memory/{org}/{repo}/threads.yaml) ----------------------
 

@@ -70,7 +70,8 @@ export ANTHROPIC_API_KEY=sk-ant-...
 
 # 4. Run
 uv run pipeline collect            # fetch the last 7 days (or --since / --until)
-uv run pipeline transform          # two-stage AI transform → drafts/
+uv run pipeline transform          # two-stage AI transform → drafts/ (prompts you to pick a focus thread)
+uv run pipeline transform --focus <thread-id>   # lead the entry on specific thread(s), no prompt
 uv run pipeline run                # collect + transform
 uv run pipeline review             # list drafts awaiting review
 uv run pipeline publish            # copy approved/ devlog into the sporny.pl repo (manual, no push)

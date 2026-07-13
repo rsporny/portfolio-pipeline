@@ -78,23 +78,27 @@ metrics, no embellished outcomes.
 
 Based on the initiatives below, produce:
 
-1. TITLE: a specific, concrete subtitle capturing the week's most interesting
-   thread — the topic only, with no series name and no number (the site adds the
-   "Senior SDET log #N:" prefix itself). E.g. "turning panics into exit codes".
+1. TITLE: a specific, concrete subtitle capturing the entry's lead topic — the
+   topic only, with no series name and no number (the site adds the "Senior SDET
+   log #N:" prefix itself). E.g. "turning panics into exit codes". When a "Focus
+   directive" is given above, the lead is the thread(s) it names; otherwise pick
+   the week's most interesting thread yourself.
 2. DEVLOG (English, 350–550 words): a weekly entry that (a) opens with brief
    context — what domain this is and why a general engineer should care;
    (b) explains the work deeply but generalised, without assuming knowledge of
    the repositories — where it aids understanding, include one short concrete
    example or analogy; (c) follows a problem → decision → outcome arc; and
    (d) ends with the outcome and a proof-of-work link (use the initiative
-   links). Where "Thread context" is provided, weave in continuity — refer back
-   to when a thread started, what was assumed, and what changed or was
-   confirmed. Continuity over novelty, but never force a connection that isn't
-   there.
-3. SOCIAL (100–180 words, English): one channel-neutral post about the most
-   interesting initiative — hook in the first line, one concrete observation or
-   lesson, at most 3 hashtags, no call to action. It should stand alone and
-   draw the reader to the full devlog.
+   links). Where "Thread context" is provided, weave in continuity — but only for
+   a thread that began in an EARLIER week: refer back to when it started, what was
+   assumed, and what changed or was confirmed. A thread marked "New this week" is
+   being introduced now — write it in the present, never as past history (do not
+   say a thread "started back in" the current week). Continuity over novelty, but
+   never force a connection that isn't there.
+3. SOCIAL (100–180 words, English): one channel-neutral post about the lead topic
+   (the focus when given, else the most interesting initiative) — hook in the
+   first line, one concrete observation or lesson, at most 3 hashtags, no call to
+   action. It should stand alone and draw the reader to the full devlog.
 4. HIGHLIGHTS: a list of notable items worth revisiting later (a metric, an
    architectural decision, a measurable result, an assumption that was
    confirmed or falsified) — one sentence each, tagged with the initiative or
@@ -122,8 +126,10 @@ def indexer_prompt(repo: str, initiatives_json: str, threads_json: str) -> str:
     )
 
 
-def stage_b_prompt(initiatives_json: str, thread_context: str = "") -> str:
+def stage_b_prompt(initiatives_json: str, thread_context: str = "", focus: str = "") -> str:
     blocks = [STAGE_B_SYSTEM]
+    if focus:
+        blocks.append(focus)
     if thread_context:
         blocks.append(thread_context)
     blocks.append(f"Initiatives (JSON):\n{initiatives_json}")

@@ -35,6 +35,23 @@ def test_parse_broken_json_raises_with_raw():
     assert excinfo.value.raw == "not json at all"
 
 
+def test_parse_object_with_trailing_prose():
+    """The model sometimes appends a note after a valid object despite being told
+    to emit JSON only (the W28 indexer failure). Salvage the object."""
+    text = '{"updates": [], "new_threads": []}\n\nNote: the other repo was left untouched.'
+    assert parse_json_response(text) == {"updates": [], "new_threads": []}
+
+
+def test_parse_object_with_leading_prose():
+    assert parse_json_response('Sure, here you go:\n{"a": 1}') == {"a": 1}
+
+
+def test_parse_no_object_still_raises_with_raw():
+    with pytest.raises(TransformError) as excinfo:
+        parse_json_response("still no object here")
+    assert excinfo.value.raw == "still no object here"
+
+
 def test_parse_non_object_raises():
     with pytest.raises(TransformError):
         parse_json_response("[1, 2, 3]")
@@ -524,3 +541,110 @@ def test_thread_ref_rendered_in_summary(tmp_path):
 
     summary = (out_dir / "summary-tech.md").read_text()
     assert "collector (continues)" in summary
+
+
+# --- temporal framing (a thread born this week is not "past") ----------------
+
+
+def test_stage_b_frames_same_week_thread_in_present(tmp_path):
+    """A thread that began THIS week is introduced in the present tense — no
+    "started N weeks ago" framing that reads the current week as history (the W28
+    'started back in W28' bug)."""
+    raw_dir, drafts_dir = tmp_path / "raw", tmp_path / "drafts"
+    memory_root = tmp_path / "memory"
+    week = _write_activity(raw_dir)  # 2026-W27
+    _seed_thread(memory_root, started_week=week, last_active_week=week)
+    llm = _FakeLLM([_stage_a_with_thread_ref(), _indexer(), _stage_b()])
+
+    transform_week(
+        _config(), llm, raw_dir=raw_dir, drafts_dir=drafts_dir, week=week, memory_root=memory_root
+    )
+
+    stage_b = llm.prompts[2]
+    assert "New this week" in stage_b
+    assert "weeks ago" not in stage_b
+    assert f"Started {week}" not in stage_b
+
+
+def test_stage_b_frames_prior_week_thread_with_age(tmp_path):
+    """A thread from an earlier week keeps continuity framing with its age."""
+    raw_dir, drafts_dir = tmp_path / "raw", tmp_path / "drafts"
+    memory_root = tmp_path / "memory"
+    week = _write_activity(raw_dir)  # 2026-W27
+    _seed_thread(memory_root, started_week="2026-W25", last_active_week="2026-W25")
+    llm = _FakeLLM([_stage_a_with_thread_ref(), _indexer(), _stage_b()])
+
+    transform_week(
+        _config(), llm, raw_dir=raw_dir, drafts_dir=drafts_dir, week=week, memory_root=memory_root
+    )
+
+    assert "Started 2026-W25 (2 weeks ago)" in llm.prompts[2]
+
+
+# --- focus control -----------------------------------------------------------
+
+
+def test_focus_selector_directs_stage_b(tmp_path):
+    """The caller's focus selection reaches Stage B as a lead directive naming the
+    chosen thread, and the selector is offered the threads active this week."""
+    raw_dir, drafts_dir = tmp_path / "raw", tmp_path / "drafts"
+    memory_root = tmp_path / "memory"
+    week = _write_activity(raw_dir)
+    new_thread = {"id": "collector-rewrite", "title": "Collector rewrite", "summary": "s"}
+    llm = _FakeLLM([_stage_a(), _indexer(new_threads=[new_thread]), _stage_b()])
+
+    offered: dict = {}
+
+    def selector(candidates):
+        offered["ids"] = [t.id for t in candidates]
+        return ["collector-rewrite"]
+
+    transform_week(
+        _config(),
+        llm,
+        raw_dir=raw_dir,
+        drafts_dir=drafts_dir,
+        week=week,
+        memory_root=memory_root,
+        focus_selector=selector,
+    )
+
+    # The just-created thread is active this week and thus a candidate.
+    assert offered["ids"] == ["collector-rewrite"]
+    stage_b = llm.prompts[-1]
+    assert "Focus directive" in stage_b
+    assert "Collector rewrite" in stage_b
+
+
+def test_focus_unknown_id_raises(tmp_path):
+    """A focus id that is not active this week is a hard error, not a silent no-op."""
+    raw_dir, drafts_dir = tmp_path / "raw", tmp_path / "drafts"
+    memory_root = tmp_path / "memory"
+    week = _write_activity(raw_dir)
+    llm = _FakeLLM([_stage_a(), _indexer(), _stage_b()])
+
+    with pytest.raises(TransformError, match="not active this week"):
+        transform_week(
+            _config(),
+            llm,
+            raw_dir=raw_dir,
+            drafts_dir=drafts_dir,
+            week=week,
+            memory_root=memory_root,
+            focus_selector=lambda candidates: ["ghost"],
+        )
+
+
+def test_no_focus_selector_leaves_stage_b_unforced(tmp_path):
+    """Default path (no selector): Stage B gets no focus directive and picks the
+    lead itself — preserving the pre-focus behavior for CI."""
+    raw_dir, drafts_dir = tmp_path / "raw", tmp_path / "drafts"
+    memory_root = tmp_path / "memory"
+    week = _write_activity(raw_dir)
+    llm = _FakeLLM([_stage_a(), _indexer(), _stage_b()])
+
+    transform_week(
+        _config(), llm, raw_dir=raw_dir, drafts_dir=drafts_dir, week=week, memory_root=memory_root
+    )
+
+    assert "Focus directive" not in llm.prompts[-1]
