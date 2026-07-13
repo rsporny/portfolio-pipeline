@@ -43,6 +43,26 @@ never merges. The merge is the manual approval, and it's where I review the actu
 content (and can edit it) before Cloudflare deploys. In the local flow, `publish`
 operates only on files I've deliberately moved into `approved/`.
 
+## Memory: threads & assumptions
+
+Weekly snapshots are forgettable; arcs are not. The pipeline keeps a **memory** —
+plain, versioned files under `memory/{org}/{repo}/` — so entries connect into
+longer stories instead of isolated weekly dumps. It tracks two things:
+
+- **Threads:** ongoing lines of work (a feature, a refactor, an experiment). Each
+  week an *indexer* pass reads the fresh activity and proposes which threads it
+  continues or starts, so a later entry can say "the thing I started three weeks
+  ago" rather than reintroducing it cold.
+- **Assumptions:** a lightweight, dated decision journal per thread — explicit
+  bets, revisited later. A falsified assumption is content gold: the writing stage
+  is told about it, because "I assumed X, then it broke" is a better story than a
+  clean narrative.
+
+Crucially, **the model proposes and code disposes**: the indexer only emits
+*proposed* mutations, which validated code applies to `memory/` deterministically.
+The model never writes memory files directly. The registry is committed to this
+repo, so every arc is transparent and reviewable in git history.
+
 ## Allowlist only (by design)
 
 The collector scans **only** the repositories explicitly listed in
@@ -80,7 +100,13 @@ uv run pytest                      # the tests are part of the story
 ```
 
 Weekly automation lives in `.github/workflows/weekly.yml` — see SPEC.md
-Module 4. It opens a PR against the website repo; merging it publishes.
+Module 5. It opens a PR against the website repo; merging it publishes. The
+Action also commits each week's `raw/` activity snapshot and `memory/` updates
+back to this repo as clearly-labeled bot commits — that derived state is the
+audit trail and the seed for next week's continuity, so it must outlive the
+run's short-lived workflow artifacts. A manual `workflow_dispatch` run accepts an
+optional `focus` input to lead the entry on specific thread(s); the scheduled run
+lets the model pick.
 
 ## Sample draft
 

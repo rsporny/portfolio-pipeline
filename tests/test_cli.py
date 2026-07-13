@@ -21,6 +21,15 @@ def test_focus_from_flag_accepts_known_ids():
     assert cli._focus_from_flag(["node-robustness"], _candidates()) == ["node-robustness"]
 
 
+def test_focus_from_flag_keeps_multiple_ids_in_order():
+    # The weekly workflow's `focus` dispatch input builds repeatable --focus args;
+    # order is the lead order, so it must be preserved verbatim.
+    assert cli._focus_from_flag(["node-robustness", "bridge-network"], _candidates()) == [
+        "node-robustness",
+        "bridge-network",
+    ]
+
+
 def test_focus_from_flag_rejects_unknown_id():
     with pytest.raises(typer.Exit):
         cli._focus_from_flag(["ghost"], _candidates())

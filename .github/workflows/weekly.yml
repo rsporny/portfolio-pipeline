@@ -8,12 +8,16 @@ on:
       since:
         description: "Start date YYYY-MM-DD (default: last 7 days)"
         required: false
+      focus:
+        description: "Thread id(s) to lead on, space-separated (default: model auto-picks)"
+        required: false
 
-# The default token stays read-only; writing to the website repo uses the
-# scoped LANDING_PAGE_TOKEN PAT below. The Action only opens a PR — it never
+# `contents: write` lets the bot commit derived state (raw/ + memory/) back to
+# THIS repo's main. Writing to the website repo still uses the scoped
+# LANDING_PAGE_TOKEN PAT below, and the Action only opens a PR there — it never
 # merges, so nothing is published without a human merge.
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: weekly-devlog
@@ -61,7 +65,28 @@ jobs:
         if: steps.meta.outputs.has_activity == 'true'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: uv run pipeline transform --week "${{ steps.meta.outputs.week }}"
+          # Optional manual override; empty on cron runs, so the model auto-picks.
+          FOCUS: ${{ github.event.inputs.focus }}
+        run: |
+          args=(--week "${{ steps.meta.outputs.week }}")
+          for f in $FOCUS; do args+=(--focus "$f"); done
+          uv run pipeline transform "${args[@]}"
+
+      - name: Commit raw + memory (bot)
+        # Not gated on has_activity: even an empty week commits its empty
+        # raw/ snapshot as an audit-trail record. memory/ is only mutated when
+        # transform ran. Derived, regenerable state — committed without a PR.
+        run: |
+          git config user.name "portfolio-pipeline[bot]"
+          git config user.email "portfolio-pipeline[bot]@users.noreply.github.com"
+          git add raw/ memory/
+          if git diff --cached --quiet; then
+            echo "Nothing to commit."
+          else
+            git commit -m "chore(bot): ${{ steps.meta.outputs.week }} activity + memory"
+            git pull --rebase --autostash origin main
+            git push origin HEAD:main
+          fi
 
       - name: Checkout landing-page
         if: steps.meta.outputs.has_activity == 'true'
