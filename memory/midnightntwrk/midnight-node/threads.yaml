@@ -1,102 +1,101 @@
 threads:
-- id: bridge-funded-local-network
-  title: Self-contained bridge-funded local test network
+- id: local-network-cross-chain-bridge
+  title: Self-contained local network with cross-chain bridge funding
   status: ongoing
   started_week: 2026-W28
   last_active_week: 2026-W28
-  summary: Introduced a first-class self-contained local network with its own on-chain
-    ledger identity, decoupled from the shared dev config so one config namespace
-    drives both genesis generation and the runtime chain-spec. Cross-chain token supply
-    is seeded at genesis and the dev wallet is funded/registered at bring-up by driving
-    the real cross-chain bridge end to end. Setup patches static configs in place
-    for diffable config drift, and build tooling now regenerates genesis/chain-spec
-    without image rebuilds. Previously-disabled contract/DDoS/replay e2e tests were
-    revived against the live bridge-funded wallet.
+  summary: Established a first-class dedicated local network with its own on-chain
+    ledger identity, decoupled from shared dev config so a single config namespace
+    drives both genesis generation and the runtime chain spec. Seeded the source-chain
+    side of the cross-chain token bridge at genesis to preserve supply invariants,
+    bootstrapped a dev wallet end-to-end via a genesis-pre-approved bridge transfer
+    (claim tokens, register operational resource token) with no governance round,
+    and introduced deterministic in-place config patching so drift surfaces as a git
+    diff. Contract, DDoS, and liveness end-to-end tests were revived against the runtime-funded
+    wallet, and the network struct was collapsed onto the dynamic custom-network path
+    since all values are known only at runtime.
   assumptions:
-  - text: Driving the real cross-chain bridge at bring-up gives durable high-fidelity
-      e2e coverage without becoming a flaky bottleneck for local network startup.
+  - text: A single config namespace driving both genesis and runtime chain spec eliminates
+      latent config inconsistencies for the local network.
     made_week: 2026-W28
     status: open
-  - text: A single config namespace driving both genesis and runtime chain-spec eliminates
-      config drift between the two.
+    review_by: 2026-W40
+  - text: Genesis-seeded Cardano bridge supply correctly mirrors on-chain pools so
+      cross-chain supply invariants hold in the local environment.
     made_week: 2026-W28
     status: open
+    review_by: 2026-W36
+  - text: Collapsing the network struct onto the dynamic custom-network path (all
+      values known only at runtime) does not lose configuration expressiveness needed
+      by future network variants.
+    made_week: 2026-W28
+    status: open
+    review_by: 2026-W40
   key_decisions:
   - week: 2026-W28
     decision: Give the local network its own on-chain ledger identity, decoupled from
-      the shared dev config.
-    rationale: Removes latent inconsistencies between genesis and runtime config and
-      makes bring-up deterministic and reproducible.
+      shared dev configuration.
+    rationale: A self-contained, reproducible environment lets developers exercise
+      the full cross-chain bridge flow offline without shared-config coupling.
   - week: 2026-W28
-    decision: Patch static configs in place at setup rather than generating them dynamically.
-    rationale: Config drift surfaces as a reviewable git diff instead of hidden runtime
-      divergence.
-  - week: 2026-W28
-    decision: Exercise the real cross-chain bridge (mint, pre-approve, claim, register)
-      at bring-up instead of hand-crafted fixtures.
-    rationale: Provides high-fidelity end-to-end coverage of a critical feature.
+    decision: Use deterministic in-place config patching from deployed contract addresses.
+    rationale: Turns configuration drift into a visible git diff signal rather than
+      a silent failure.
 - id: cnight-observation-nightly-reliability
-  title: cNIGHT observation nightly stabilization
+  title: cNIGHT observation nightly reliability and toolkit hardening
   status: ongoing
   started_week: 2026-W28
   last_active_week: 2026-W28
-  summary: Diagnosed and fixed a nightly observation e2e suite that had been red for
-    weeks due to stacked causes, documented across twelve instrumented verification
-    runs. Fixes included budgeting timeouts to a degraded upstream block rate, a stall
-    detector, retargeting from a 1.x-runtime chain (where the wallet-state cache was
-    a silent no-op) onto a 2.x-runtime chain, and hardened transport resilience (retries/backoff,
-    client eviction, resubmission recovery, concurrency gating, faucet contention
-    recovery, fail-fast endpoint smoke test). A bridge happy-path walkthrough doc
-    was also written.
+  summary: 'Recovered a long-red cross-chain observation nightly by isolating stacked
+    root causes across twelve instrumented runs: a degraded upstream block rate outgrowing
+    fixed timeouts, a silently no-opping wallet cache on older runtimes, and post-await
+    transport flakes. Retargeted the nightly at a runtime-compatible devnet, replaced
+    fixed timeouts with block-span-aware budgets plus a stall detector, added retry/backoff
+    and client eviction, gated concurrent replays behind semaphores, and hardened
+    the shared faucet against cross-run UTXO contention. Separately converted toolkit
+    panics (insufficient-funds, fetcher arithmetic underflow) surfaced by fault-injection
+    testing into clean errors and re-anchored an oversized in-memory observation window
+    to the reorg-safety margin.'
   assumptions:
-  - text: Retargeting the observation suite onto the 2.x-runtime chain restores a
-      reliable nightly signal without losing coverage.
+  - text: Block-span-aware timeout budgets plus a stall detector keep the observation
+      nightly green under variable upstream block rates.
     made_week: 2026-W28
     status: open
-  - text: The stacked transport-resilience hardening addresses genuine flakes rather
-      than masking a remaining systematic failure that will resurface.
+    review_by: 2026-W34
+  - text: The wallet cache no-op on older-runtime chains was a genuine root cause
+      and retargeting to a compatible runtime resolves it durably.
     made_week: 2026-W28
     status: open
+    review_by: 2026-W36
   key_decisions:
   - week: 2026-W28
-    decision: Retarget the suite from a 1.x-runtime chain to a 2.x-runtime chain with
-      identical coverage.
-    rationale: On 1.x the wallet-state cache was a silent no-op forcing full genesis
-      replays; 2.x makes caching effective.
+    decision: Diagnose the flaky nightly per-layer rather than seeking a single root
+      cause.
+    rationale: Long-running distributed suites fail for stacked reasons; systematic
+      per-layer resilience hardening is what restores a reliable signal.
   - week: 2026-W28
-    decision: Add fail-fast pre-run endpoint smoke tests and a stall detector.
-    rationale: Turns multi-hour silent failures into fast, actionable errors and separates
-      environmental degradation from real flakes.
-- id: fault-injection-node-robustness
-  title: Fault-injection-driven node & toolkit robustness
+    decision: Bound the in-memory observation window to a reorg-safety margin.
+    rationale: Caps memory growth on from-genesis sync while preserving reorg correctness.
+- id: consensus-finality-fault-tolerance
+  title: Consensus committee sizing and finality fault tolerance
   status: ongoing
   started_week: 2026-W28
   last_active_week: 2026-W28
-  summary: Hardening node and toolkit behavior against adverse network conditions,
-    largely surfaced by fault-injection testing. Replaced panics with clean error
-    returns in the transaction-generator toolkit and used saturating subtraction in
-    the block fetcher to prevent an underflow-to-SIGABRT when a load-balanced RPC
-    replica lags the cache watermark. Re-anchored the on-chain observation sliding
-    window to a reorg-safety margin behind the follower so genesis-synced and restart-with-state
-    nodes converge to the same near-tip window, eliminating unbounded memory growth.
-    Also backported a devnet committee D-parameter change (6→7 seats) to raise finality
-    fault tolerance.
+  summary: Backported a committee-size increase (6 to 7 validator seats) to a release
+    branch, raising finality fault tolerance from one to two concurrent non-voting
+    validators to mitigate an observed finality stall when two validators lagged simultaneously
+    and dropped prevotes below the supermajority threshold. Regenerated the affected
+    chain-spec and its recorded hash to keep config and generated artifacts self-consistent,
+    alongside a supporting CI/Docker package-pin fix so the branch builds cleanly.
   assumptions:
-  - text: Re-anchoring the observation sliding window to a reorg-safety margin behind
-      the follower bounds memory regardless of sync history.
+  - text: Raising the committee to 7 seats resolves the observed finality stall under
+      two simultaneously lagging validators in production.
     made_week: 2026-W28
     status: open
-  - text: Fault-injection (Antithesis) testing will keep surfacing latent panic/arithmetic
-      conditions worth systematically hardening.
-    made_week: 2026-W28
-    status: open
+    review_by: 2026-W36
   key_decisions:
   - week: 2026-W28
-    decision: Surface expected runtime conditions (insufficient funds, lagging replica)
-      as clean error returns/non-zero exits instead of panics.
-    rationale: Makes CLI and node behavior predictable under adverse conditions instead
-      of crashing test workloads.
-  - week: 2026-W28
-    decision: Raise the devnet committee D-parameter from 6 to 7 seats.
-    rationale: Increases finality fault tolerance from one to two concurrent non-voting
-      validators.
+    decision: Backport the committee-size change to a release branch rather than only
+      landing it on main.
+    rationale: Applies a known-good production fix to the release line before deployment,
+      since committee sizing directly determines survivable validator outages.

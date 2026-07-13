@@ -1,69 +1,83 @@
 threads:
-- id: content-pipeline-memory
-  title: Content pipeline memory & thread continuity
+- id: memory-and-site-adapter-architecture
+  title: 'Neutral core: memory layer and pluggable site adapters'
   status: ongoing
   started_week: 2026-W28
   last_active_week: 2026-W28
-  summary: Per-repository memory subsystem that connects weekly pipeline outputs into
-    longer narrative arcs. A pydantic-backed thread registry (threads, assumptions,
-    key decisions) with load/save and a deterministic 'model proposes, code disposes'
-    mutation step validates every AI-suggested change, rejecting unknown thread ids
-    or colliding entries before committing. The summarization stage loads active repo
-    context and links initiatives to known threads via typed continues/pivots/concludes/contradicts
-    relations, with graceful fallback when the indexer fails. Hand-written context
-    cards were seeded for allowlisted repos, and raw activity snapshots are committed
-    as a versioned, auditable source of truth. Work continues this week refining the
-    validation boundary and thread-linking behavior.
+  summary: 'The memory layer matured this week: the mutation applier now validates
+    every proposed change and rejects unknown thread ids or colliding entries before
+    committing, and the two-stage transform became memory-aware via a typed thread_ref
+    relation that links detected initiatives to known threads and surfaces assumptions
+    due for review. Site-specific rendering (front-matter, manifest schema, per-series
+    numbering) sits fully behind a neutral SiteAdapter protocol so the core carries
+    no site vocabulary, and weekly plus custom entries share a single manifest numbering
+    authority. Raw activity snapshots are committed as a versioned, auditable source
+    of truth. The architectural spine for a reusable, forkable core is now in place
+    and exercised end-to-end.'
   assumptions:
-  - text: The deterministic apply-and-validate boundary is sufficient to prevent the
-      model from corrupting persistent thread state.
-    made_week: current
-    status: open
-  - text: Typed continues/pivots/concludes/contradicts relations are expressive enough
-      to capture how weekly initiatives connect to existing threads.
-    made_week: current
-    status: open
-  - text: Graceful fallback when the indexer fails keeps memory strictly optional,
-      so a broken registry never blocks the content-writing stage.
+  - text: A deterministic code-validates-LLM-proposals mutation layer is sufficient
+      to keep the memory registry free of silent corruption without human review of
+      every change.
     made_week: 2026-W28
     status: open
+    review_by: 2026-W36
+  - text: The site-adapter protocol is general enough that a second site could be
+      added without changing the neutral core.
+    made_week: 2026-W28
+    status: open
+    review_by: 2026-W40
+  - text: Threads will meaningfully connect week-over-week rather than accumulating
+      as stale entries.
+    made_week: 2026-W28
+    status: open
+    review_by: 2026-W36
   key_decisions:
-  - week: current
-    decision: Adopt a 'model proposes, code disposes' architecture where AI suggests
-      thread mutations and deterministic code validates and applies them.
-    rationale: Gives generated content continuity and auditability without letting
-      the LLM directly mutate persistent state.
-- id: site-adapter-publishing
-  title: Site adapter extraction & unified publishing
+  - week: 2026-W28
+    decision: Separate a neutral core pipeline from site-specific rendering via a
+      site-adapter protocol.
+    rationale: Keeps the tool reusable, testable, and forkable rather than hard-coded
+      to one website.
+  - week: 2026-W28
+    decision: Adopt a model-proposes / code-disposes pattern for memory mutations.
+    rationale: Code validates every LLM-proposed change, keeping an AI-in-the-loop
+      system safe from silent corruption.
+  - week: 2026-W28
+    decision: Commit versioned raw activity snapshots as an auditable source of truth.
+    rationale: Makes every published artifact reproducible.
+- id: reader-output-and-publishing-automation
+  title: Reader-focused output and end-to-end publishing gate
   status: ongoing
   started_week: 2026-W28
   last_active_week: 2026-W28
-  summary: Publishing stage sits behind a neutral SiteAdapter protocol so all site-specific
-    knowledge (layout, manifest schema, per-series numbering) lives behind an interface
-    rather than leaking into the core. DevlogEntry is site-neutral and symmetric across
-    entry kinds, with the adapter composing the full site output (front matter + manifest).
-    The manifest is the single authority for entry numbering so weekly and manual
-    entries share one collision-free per-series sequence, and a publish-custom command
-    turns plain Markdown into a published entry without hand-written front matter.
-    This week closed the editorial loop with a review/publish flow, and a weekly GitHub
-    Action opens a PR against the website repo while keeping a human merge as the
-    publish gate.
+  summary: 'The reader-focused output and editorial loop were consolidated this week:
+    one channel-neutral post with per-initiative categorization, proof-of-work links,
+    generalized domain context, and auto-numbered devlog titles. Review and publish
+    commands round-trip YAML front-matter, list drafts by status, and publish approved
+    entries into the website repo while keeping social and highlights local. A weekly
+    GitHub Action collects activity, runs the transform, and opens a PR against the
+    website repo with a human merge as the sole publish trigger. Hand-written repository
+    context cards seed the transform with accurate domain grounding.'
   assumptions:
-  - text: The SiteAdapter protocol boundary is neutral enough that the pipeline core
-      stays free of domain vocabulary and remains forkable.
-    made_week: current
-    status: open
-  - text: Making the manifest the single authority for entry numbering eliminates
-      ordering/duplication bugs across weekly and manual entries.
-    made_week: current
-    status: open
-  - text: Having the adapter compose the entire site output keeps transform-stage
-      metadata from ever leaking into the published site.
+  - text: A single channel-neutral post serves the audience better than multilingual/per-channel
+      variants.
     made_week: 2026-W28
     status: open
+    review_by: 2026-W40
+  - text: A human merge gate on the auto-generated weekly PR is the right approval
+      step and won't become a bottleneck.
+    made_week: 2026-W28
+    status: open
+    review_by: 2026-W36
+  - text: Hand-written repository context cards give the transform enough grounding
+      to avoid inaccurate domain claims.
+    made_week: 2026-W28
+    status: open
+    review_by: 2026-W36
   key_decisions:
-  - week: current
-    decision: Keep a human merge as the publish gate via a weekly GitHub Action that
-      opens a PR against the website repo.
-    rationale: Automates editorial prep while preserving human oversight before anything
-      is published.
+  - week: 2026-W28
+    decision: Automate PR generation into the website repo while keeping a human merge
+      gate.
+    rationale: Gains automation benefits without the risk of unattended publishing.
+  - week: 2026-W28
+    decision: Generalize output for non-expert readers and attach proof-of-work links.
+    rationale: Makes generated content trustworthy and useful beyond the author.
