@@ -1,10 +1,44 @@
 from __future__ import annotations
 
 import os
+import re
 
 import httpx
 
 GITHUB_API = "https://api.github.com"
+
+# GitHub's closing keywords (close/fix/resolve + inflections) followed by `#N`.
+# https://docs.github.com/issues/tracking-your-work-with-issues/linking-a-pull-request-to-an-issue
+_CLOSING_KEYWORDS_RE = re.compile(
+    r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\b\s+#(\d+)", re.IGNORECASE
+)
+
+
+def closing_issue_numbers(body: str | None) -> list[int]:
+    """Issue numbers a PR body says it closes (deduped, in first-seen order)."""
+    seen: list[int] = []
+    for match in _CLOSING_KEYWORDS_RE.finditer(body or ""):
+        number = int(match.group(1))
+        if number not in seen:
+            seen.append(number)
+    return seen
+
+
+def timeline_issue_numbers(events: list[dict]) -> list[int]:
+    """Issue numbers cross-referenced or connected to a PR, from its timeline
+    (deduped, in first-seen order). These are *references*, not closes."""
+    seen: list[int] = []
+    for event in events:
+        if event.get("event") not in ("cross-referenced", "connected"):
+            continue
+        source = (event.get("source") or {}).get("issue") or {}
+        # A cross-reference from another PR is not an issue link; skip PRs.
+        if "pull_request" in source:
+            continue
+        number = source.get("number")
+        if isinstance(number, int) and number not in seen:
+            seen.append(number)
+    return seen
 
 
 class GitHubError(RuntimeError):
@@ -93,3 +127,25 @@ class GitHubClient:
         """Issues assigned to ``assignee`` and closed in the window (dates)."""
         q = f"repo:{repo} type:issue assignee:{assignee} is:closed closed:{since}..{until}"
         return self._paginate("/search/issues", {"q": q, "per_page": 100})
+
+    # --- v0.3 deep context (fetched only for repos with an active thread) -----
+
+    def list_pr_review_comments(self, repo: str, number: int) -> list[dict]:
+        """Inline review comments left on a PR's diff."""
+        return self._paginate(f"/repos/{repo}/pulls/{number}/comments", {"per_page": 100})
+
+    def list_pr_reviews(self, repo: str, number: int) -> list[dict]:
+        """Review summaries on a PR (each carries a ``state`` and optional body)."""
+        return self._paginate(f"/repos/{repo}/pulls/{number}/reviews", {"per_page": 100})
+
+    def list_issue_comments(self, repo: str, number: int) -> list[dict]:
+        """Conversation comments on a PR (a PR is an issue for this endpoint)."""
+        return self._paginate(f"/repos/{repo}/issues/{number}/comments", {"per_page": 100})
+
+    def list_timeline(self, repo: str, number: int) -> list[dict]:
+        """A PR's timeline events (used for cross-referenced/connected issues)."""
+        return self._paginate(f"/repos/{repo}/issues/{number}/timeline", {"per_page": 100})
+
+    def get_issue(self, repo: str, number: int) -> dict:
+        """Fetch a single issue (for a linked issue's title/state/url)."""
+        return self._get(f"/repos/{repo}/issues/{number}").json()

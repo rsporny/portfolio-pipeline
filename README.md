@@ -17,9 +17,10 @@ can automate their own devlog.
 
 ```
   collect ──► raw/YYYY-Wnn/activity.json          (GitHub activity, versioned schema)
-     │
+     │        + selective deep context: review discussion & linked issues for PRs
+     │          in repos with an active thread (anonymized before it hits raw/)
      ▼
-  redact  ──► mask forbidden phrases before any API call   (default: none)
+  redact  ──► mask forbidden phrases before any API call + third-party names
      │
      ▼
   transform ─► Stage A: technical summary (initiatives + categories + proof-of-work links)
@@ -62,6 +63,16 @@ Crucially, **the model proposes and code disposes**: the indexer only emits
 *proposed* mutations, which validated code applies to `memory/` deterministically.
 The model never writes memory files directly. The registry is committed to this
 repo, so every arc is transparent and reviewable in git history.
+
+**Deep context, selectively.** An active thread earns richer signal: for a repo
+with an ongoing thread, the collector also pulls each of my PRs' *review
+discussion* and *linked issues*, so the writing can draw on the "why" — the intent
+a reviewer surfaced, the problem an issue described — not just the commit message.
+It is fetched only where an arc exists (cost and noise control), used for
+understanding only, and **never quoted**. Because `raw/` is a public repo, every
+third-party name (logins, `@mentions`, `Co-authored-by`) is masked to
+`[collaborator]` *before* the snapshot is written — the model, and the git
+history, only ever see anonymized text.
 
 ## Allowlist only (by design)
 

@@ -1,0 +1,18 @@
+[
+  {
+    "event": "cross-referenced",
+    "source": {"issue": {"number": 99, "title": "Design discussion"}}
+  },
+  {
+    "event": "connected",
+    "source": {"issue": {"number": 42, "title": "Bug: crash on empty input"}}
+  },
+  {
+    "event": "cross-referenced",
+    "source": {"issue": {"number": 7, "pull_request": {}, "title": "Another PR"}}
+  },
+  {
+    "event": "labeled",
+    "label": {"name": "enhancement"}
+  }
+]

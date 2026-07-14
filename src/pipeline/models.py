@@ -7,7 +7,9 @@ from pydantic import BaseModel, Field
 
 # Bump when the on-disk activity.json shape changes.
 # v2: added `url` (GitHub html_url) to commits/PRs/issues for proof-of-work links.
-SCHEMA_VERSION = 2
+# v3: added anonymized deep context on PRs (review_comments, linked_issues),
+#     fetched only for repos with an active thread (v0.3 selective deep context).
+SCHEMA_VERSION = 3
 
 
 class FileChange(BaseModel):
@@ -50,6 +52,47 @@ class Commit(BaseModel):
         )
 
 
+class ReviewComment(BaseModel):
+    """A single comment from a PR's review discussion (v0.3 deep context).
+
+    Anonymized by design: ``author_role`` is structural — it lets the model tell
+    the owner's own words from a collaborator's without ever carrying a name, and
+    the ``body`` is name-redacted before it is persisted to the public ``raw/``.
+    Third-party input informs understanding only; it is never quoted (SPEC).
+    """
+
+    body: str = ""
+    author_role: Literal["owner", "other"] = "other"
+    kind: Literal["review", "inline", "conversation"] = "conversation"
+
+    @classmethod
+    def from_api(cls, data: dict, *, github_user: str, kind: str) -> ReviewComment:
+        login = (data.get("user") or {}).get("login", "") or ""
+        role = "owner" if login and login.lower() == github_user.lower() else "other"
+        return cls(body=data.get("body") or "", author_role=role, kind=kind)
+
+
+class LinkedIssue(BaseModel):
+    """An issue a PR closes or references (v0.3 deep context). ``relation`` is
+    ``closes`` for a closing-keyword link, ``references`` for a cross-reference."""
+
+    number: int
+    title: str = ""
+    url: str = ""
+    state: str = ""
+    relation: Literal["closes", "references"] = "references"
+
+    @classmethod
+    def from_api(cls, data: dict, *, relation: str) -> LinkedIssue:
+        return cls(
+            number=data["number"],
+            title=data.get("title", ""),
+            url=data.get("html_url", ""),
+            state=data.get("state", ""),
+            relation=relation,  # type: ignore[arg-type]
+        )
+
+
 class PullRequest(BaseModel):
     number: int
     title: str
@@ -59,6 +102,10 @@ class PullRequest(BaseModel):
     url: str = ""
     created_at: datetime | None = None
     merged_at: datetime | None = None
+    # v0.3 deep context — populated only for repos with an active thread, empty
+    # otherwise (so a schema-2 activity.json still parses unchanged).
+    review_comments: list[ReviewComment] = Field(default_factory=list)
+    linked_issues: list[LinkedIssue] = Field(default_factory=list)
 
     @classmethod
     def from_api(cls, data: dict) -> PullRequest:

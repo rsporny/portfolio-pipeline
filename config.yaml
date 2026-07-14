@@ -15,6 +15,7 @@ memory:
   root: memory/
 redaction:
   forbidden_phrases: []
+  redact_third_party_names: true
 output:
   site_repo_path: ~/repos/landing-page
   site_devlog_dir: content/devlog

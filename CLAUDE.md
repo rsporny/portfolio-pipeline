@@ -2,7 +2,7 @@
 
 ## What this project is
 
-An automated "commit → content" pipeline: once a week it collects the owner's public development activity (commits, PRs, closed issues from GitHub) and uses the Claude API to turn it into content drafts — a titled, auto-numbered devlog entry, one channel-neutral English social post, and a list of highlights. Since v0.2 the pipeline has **memory**: it maintains a registry of work threads per organization/repository (`memory/{org}/{repo}/`), so weekly entries connect into longer arcs — features, assumptions, pivots — instead of isolated snapshots.
+An automated "commit → content" pipeline: once a week it collects the owner's public development activity (commits, PRs, closed issues from GitHub) and uses the Claude API to turn it into content drafts — a titled, auto-numbered devlog entry, one channel-neutral English social post, and a list of highlights. Since v0.2 the pipeline has **memory**: it maintains a registry of work threads per organization/repository (`memory/{org}/{repo}/`), so weekly entries connect into longer arcs — features, assumptions, pivots — instead of isolated snapshots. Since v0.3 it also has **selective deep context**: for a repo with an active thread, the collector enriches each PR with its review discussion and linked issues (`activity.json` is `schema_version: 3`). That input is anonymized in the collector — third-party logins/names/`@mentions`/`Co-authored-by` are masked to `[collaborator]` before `raw/` is written — so it is used for understanding only and never quoted or attributed.
 
 Publishing is a pull request against the owner's website repo; **merge = publish** (Cloudflare deploys on merge). The pipeline never merges — a human always reviews first.
 

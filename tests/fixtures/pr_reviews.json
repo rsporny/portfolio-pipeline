@@ -1,0 +1,14 @@
+[
+  {
+    "id": 10,
+    "user": {"login": "reviewer1"},
+    "state": "CHANGES_REQUESTED",
+    "body": "One concern about the gating logic."
+  },
+  {
+    "id": 11,
+    "user": {"login": "reviewer1"},
+    "state": "APPROVED",
+    "body": ""
+  }
+]

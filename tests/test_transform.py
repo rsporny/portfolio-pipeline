@@ -11,7 +11,14 @@ import pytest
 from pipeline.config import Config, RedactionConfig, ReposConfig
 from pipeline.llm import LLMClient, TransformError, parse_json_response, strip_fences
 from pipeline.memory import Assumption, Thread, ThreadRegistry, load_registry, save_registry
-from pipeline.models import Activity, Commit, RepoActivity
+from pipeline.models import (
+    Activity,
+    Commit,
+    LinkedIssue,
+    PullRequest,
+    RepoActivity,
+    ReviewComment,
+)
 from pipeline.transform import find_latest_activity, transform_week
 
 # --- JSON parsing -----------------------------------------------------------
@@ -215,6 +222,34 @@ def _write_activity(raw_dir, week: str = "2026-W27") -> str:
     return week
 
 
+def _write_activity_with_deep_pr(raw_dir, week: str = "2026-W27") -> str:
+    """An activity whose PR carries v0.3 deep context (already anonymized)."""
+    now = datetime.now(UTC)
+    pr = PullRequest(
+        number=5,
+        title="Add collector",
+        description="Closes #42",
+        review_comments=[
+            ReviewComment(body="Gate this on active threads.", author_role="other", kind="review"),
+            ReviewComment(body="Done, gated it.", author_role="owner", kind="conversation"),
+        ],
+        linked_issues=[
+            LinkedIssue(number=42, title="Flaky window", url="https://x/42", relation="closes")
+        ],
+    )
+    activity = Activity(
+        generated_at=now,
+        since=now,
+        until=now,
+        week=week,
+        repos=[RepoActivity(repo="o/r", pull_requests=[pr])],
+    )
+    week_dir = raw_dir / week
+    week_dir.mkdir(parents=True)
+    (week_dir / "activity.json").write_text(activity.model_dump_json())
+    return week
+
+
 def _config(forbidden=None, descriptions=None):
     return Config(
         github_user="rsporny",
@@ -289,6 +324,49 @@ def test_transform_redacts_input_before_sending(tmp_path):
     stage_a_prompt_text = llm.prompts[0]
     assert "o/r" not in stage_a_prompt_text
     assert "[REDACTED]" in stage_a_prompt_text
+
+
+def test_stage_a_prompt_has_deep_context_guardrail(tmp_path):
+    """The Stage A system prompt tells the model deep context is for understanding
+    only and must never be quoted."""
+    raw_dir, drafts_dir = tmp_path / "raw", tmp_path / "drafts"
+    week = _write_activity(raw_dir)
+    llm = _FakeLLM([_stage_a(), _indexer(), _stage_b()])
+
+    transform_week(
+        _config(),
+        llm,
+        raw_dir=raw_dir,
+        drafts_dir=drafts_dir,
+        week=week,
+        memory_root=tmp_path / "memory",
+    )
+
+    stage_a = llm.prompts[0]
+    assert "review_comments" in stage_a
+    assert "never quote" in stage_a
+
+
+def test_transform_runs_with_deep_context(tmp_path):
+    """A PR carrying review discussion + linked issues flows through to Stage A
+    structurally (it rides on the activity JSON) and the run still completes."""
+    raw_dir, drafts_dir = tmp_path / "raw", tmp_path / "drafts"
+    week = _write_activity_with_deep_pr(raw_dir)
+    llm = _FakeLLM([_stage_a(), _indexer(), _stage_b()])
+
+    out_dir = transform_week(
+        _config(),
+        llm,
+        raw_dir=raw_dir,
+        drafts_dir=drafts_dir,
+        week=week,
+        memory_root=tmp_path / "memory",
+    )
+
+    assert (out_dir / "devlog.md").exists()
+    stage_a = llm.prompts[0]
+    assert "Gate this on active threads." in stage_a  # deep context reached the model
+    assert "Flaky window" in stage_a  # linked-issue title too
 
 
 def test_transform_broken_json_writes_failed_raw(tmp_path):
