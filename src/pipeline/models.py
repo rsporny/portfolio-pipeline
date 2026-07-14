@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 # Bump when the on-disk activity.json shape changes.
 # v2: added `url` (GitHub html_url) to commits/PRs/issues for proof-of-work links.
@@ -208,3 +208,28 @@ class Content(BaseModel):
     devlog: str
     social: str
     highlights: list[str] = Field(default_factory=list)
+
+    @field_validator("highlights", mode="before")
+    @classmethod
+    def _coerce_highlights(cls, value: object) -> object:
+        """Accept highlights as plain strings or as tagged objects.
+
+        The prompt asks for one sentence "tagged with the initiative/thread
+        name", which the model sometimes honors literally by emitting objects
+        like ``{"text": "...", "tag": "some-thread"}`` instead of a string. Flatten
+        those to ``"<text> — <tag>"`` so a reasonable response never fails schema
+        validation over shape alone."""
+        if not isinstance(value, list):
+            return value
+        flattened: list[object] = []
+        for item in value:
+            if isinstance(item, dict):
+                text = item.get("text") or item.get("highlight") or item.get("item") or ""
+                tag = item.get("tag") or item.get("thread") or item.get("initiative") or ""
+                if text and tag and str(tag) not in str(text):
+                    flattened.append(f"{text} — {tag}")
+                else:
+                    flattened.append(text or next((str(v) for v in item.values() if v), ""))
+            else:
+                flattened.append(item)
+        return flattened
