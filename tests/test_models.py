@@ -1,6 +1,13 @@
 from __future__ import annotations
 
-from pipeline.models import SCHEMA_VERSION, Activity, LinkedIssue, PullRequest, ReviewComment
+from pipeline.models import (
+    SCHEMA_VERSION,
+    Activity,
+    Content,
+    LinkedIssue,
+    PullRequest,
+    ReviewComment,
+)
 
 
 def test_schema_version_is_3():
@@ -58,6 +65,34 @@ def test_review_comment_from_api_marks_owner_role():
     assert owner.author_role == "owner"
     assert other.author_role == "other"
     assert other.kind == "inline"
+
+
+def test_content_accepts_plain_string_highlights():
+    content = Content(title="t", devlog="d", social="s", highlights=["one", "two"])
+    assert content.highlights == ["one", "two"]
+
+
+def test_content_coerces_tagged_object_highlights():
+    """The model sometimes emits highlights as {'text', 'tag'} objects instead of
+    strings (the W29 failure) — flatten them rather than fail validation."""
+    content = Content.model_validate(
+        {
+            "title": "t",
+            "devlog": "d",
+            "social": "s",
+            "highlights": [
+                {"text": "Bootstrapped a local network", "tag": "local-network-bridge"},
+                {
+                    "text": "Recovered a nightly job [cnight]",
+                    "tag": "cnight",
+                },  # tag already present
+                "already a plain string",
+            ],
+        }
+    )
+    assert content.highlights[0] == "Bootstrapped a local network — local-network-bridge"
+    assert content.highlights[1] == "Recovered a nightly job [cnight]"  # not double-tagged
+    assert content.highlights[2] == "already a plain string"
 
 
 def test_linked_issue_from_api():
