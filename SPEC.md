@@ -45,7 +45,9 @@ For each repo on the allowlist in `config.yaml`, fetch within the given time win
 
 The `url` (GitHub `html_url`) is captured so drafts can cite proof of work.
 
-Output: `raw/YYYY-Wnn/activity.json` (versioned schema, currently `schema_version: 2`), **committed to this repository**. Raw activity is the pipeline's source of truth: it makes every published entry reproducible and auditable. If there is no activity — write an empty file and exit with an informational message (no transform, no PR).
+**Selective deep context (v0.3).** For a PR in a repo that has an **active thread** in memory (any thread with `status: ongoing`), the collector also fetches the PR's *review discussion* (review summaries with a body, inline review comments, conversation comments) and its *linked issues* (numbers from body closing-keywords → `relation: closes`; timeline cross-references → `relation: references`). Gating is repo-level and computed at collect time: a brand-new PR's thread membership only exists after Stage A, so instead of a second Stage A pass, deep context is fetched for the owner-PRs of any repo with an ongoing arc — and skipped entirely for repos without one (and always, before any thread exists). Comments carry a structural `author_role` (`owner`|`other`) but **no names**; third-party input informs understanding only and is never quoted (content policy). Deep data is anonymized *before* it reaches `raw/` (see redaction below).
+
+Output: `raw/YYYY-Wnn/activity.json` (versioned schema, currently `schema_version: 3` — v3 added the anonymized deep context on PRs; a `schema_version: 2` file still parses, the new fields default empty), **committed to this repository**. Raw activity is the pipeline's source of truth: it makes every published entry reproducible and auditable. If there is no activity — write an empty file and exit with an informational message (no transform, no PR).
 
 ### Config (`config.yaml`)
 
@@ -62,7 +64,8 @@ memory:
   root: memory/
 redaction:
   forbidden_phrases: []
-  redact_third_party_names: true
+  redact_third_party_names: true       # mask non-owner logins/names before raw/ + every model call
+  role_placeholder: "[collaborator]"   # what a redacted third-party name becomes
 site:
   repo: rsporny/landing-page          # PR target (owner/name)
   devlog_dir: content/devlog
@@ -119,11 +122,11 @@ The `assumptions` block is a lightweight decision journal: explicit, dated, revi
 
 ## Module 3: Transformer (three steps)
 
-Step 0 — redaction: mask phrases from `redaction.forbidden_phrases` in all input data; when `redact_third_party_names` is true, replace GitHub logins/names other than `github_user` with role placeholders (e.g., `[reviewer]`). Log what was redacted. Runs before every model call.
+Step 0 — redaction: mask phrases from `redaction.forbidden_phrases` in all input data. Two layers cooperate: (1) **name anonymization** — when `redact_third_party_names` is true, every GitHub login / display name / `@mention` other than `github_user` is replaced with `redaction.role_placeholder` (default `[collaborator]`). The participant set is gathered deterministically from the collected data (comment/review authors, `@mentions`, `Co-authored-by` trailers), so this happens **in the collector, before `raw/` is written** — the public snapshot never carries a third party's name. (2) **phrase redaction** runs in the transformer before every model call over the already-anonymized activity. Log what was redacted (counts only — never the names themselves).
 
 ### Stage A — technical summary (memory-aware)
 
-Input: `activity.json` + the repo `descriptions` from config + `context.md` and current `threads.yaml` for each repo with activity. Group the week's work into 2–5 initiatives. Per initiative: `name`, `category` (a domain label a general engineer recognizes), `what` (3–5 technical sentences, English), `why_it_matters`, `tech`, `links` (commit/PR URLs = proof of work), and — if it plausibly continues or affects a known thread — a `thread_ref` (`{id, relation}` where relation ∈ continues | pivots | concludes | contradicts). Cosmetic commits are ignored unless they add up to something.
+Input: `activity.json` (including any anonymized deep context on PRs — review discussion and linked issues, which the model may use to understand intent but must never quote or attribute) + the repo `descriptions` from config + `context.md` and current `threads.yaml` for each repo with activity. Group the week's work into 2–5 initiatives. Per initiative: `name`, `category` (a domain label a general engineer recognizes), `what` (3–5 technical sentences, English), `why_it_matters`, `tech`, `links` (commit/PR URLs = proof of work), and — if it plausibly continues or affects a known thread — a `thread_ref` (`{id, relation}` where relation ∈ continues | pivots | concludes | contradicts). Cosmetic commits are ignored unless they add up to something.
 
 Expected JSON: `{"initiatives": [{"name", "category", "what", "why_it_matters", "tech": [], "links": [], "thread_ref": {"id", "relation"} | null}]}`.
 
@@ -238,7 +241,7 @@ Public, building-in-public repo. Must include: data-flow diagram, the human-in-t
 
 ## Roadmap (do not implement ahead of schedule)
 
-- **v0.3** — selective deep context: review comments and linked/parent/child issues fetched only for PRs belonging to active threads; third-party input used for understanding only, never quoted (policy above already applies).
+- **v0.3** — selective deep context: review comments and linked issues fetched only for PRs in repos with an active thread; third-party input used for understanding only, never quoted (policy above already applies). Sub-issue parent/child graph deferred.
 - **v0.4** — eval suite for the transformer: golden examples, property assertions (valid JSON, content-policy compliance, word limits, faithfulness to activity), run in CI on every prompt/model change, results published.
 - **v0.5** — provenance: signed entries + weekly hash anchoring (merkle root) on Cardano.
 - **v1.0** — experiment: ZK-based verifiable claims about private activity (Midnight).
@@ -259,4 +262,41 @@ no prompt), a `workflow_dispatch` `focus` input can override it for manual runs,
 the Action now commits each week's `raw/` snapshot and `memory/` updates back to
 `main` as labeled bot commits — derived, regenerable state that must outlive the
 ≤90-day workflow artifacts so continuity survives week to week. The website side is
-unchanged: the Action only *opens* a PR and never merges. Next: v0.3 (see roadmap).
+unchanged: the Action only *opens* a PR and never merges.
+
+## Implementation order for v0.3 (milestones)
+
+Selective deep context — richer signal for ongoing arcs without deep-fetching
+every one-off chore. Gating is **repo-level at collect time**: a brand-new PR's
+thread membership only exists after Stage A, so instead of a two-pass transform,
+deep context is fetched for the owner-PRs of any repo that has an active thread
+in memory. Deep data lands (anonymized) in `raw/` — reproducible and auditable.
+
+1. Third-party name redaction: `redact_names` + `redaction.redact_third_party_names`
+   config (the SPEC Module 3 step, previously unimplemented) + tests. Foundation
+   for persisting anyone else's words.
+2. Deep-context schema: `schema_version: 3`, `ReviewComment` / `LinkedIssue` on
+   `PullRequest` (empty on schema-2 files) + back-compat tests.
+3. Collector deep fetch: GitHub client methods for PR review comments, review
+   summaries, conversation comments, and linked issues (body closing-keywords +
+   timeline cross-references) + fixture tests.
+4. Collector gating + anonymize: load memory, deep-fetch only repos with an
+   active thread, gather the participant name-set, redact third-party names
+   across the activity before writing `raw/` + tests.
+5. Prompt guardrails: Stage A / indexer / Stage B told deep context is for
+   understanding only — never quoted or attributed; contributors are already
+   anonymized. Deep context reaches the model structurally (it rides on the PRs
+   in the activity JSON) + tests.
+6. Docs: SPEC status, README, CLAUDE, config keys.
+
+After each milestone: a working state, green tests, a commit. The website side is
+untouched — v0.3 changes only what the pipeline *knows*, not how it publishes.
+
+**Status (v0.3.0):** all six milestones delivered. The collector now enriches the
+owner-PRs of any repo with an ongoing thread with review discussion and linked
+issues, and the SPEC's long-specified third-party name redaction is finally
+implemented — anonymization happens in the collector so `raw/` (a public repo)
+never carries a collaborator's name, while phrase redaction still runs before
+every model call. `schema_version` is now 3 (v2 files still parse). Deep context
+reaches the model structurally, guarded by "understanding only, never quote"
+instructions across Stage A / indexer / Stage B. Next: v0.4 (see roadmap).

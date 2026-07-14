@@ -1,0 +1,12 @@
+[
+  {
+    "id": 20,
+    "user": {"login": "rsporny"},
+    "body": "Rebased on main."
+  },
+  {
+    "id": 21,
+    "user": {"login": "maintainer2"},
+    "body": "Thanks @reviewer1, merging."
+  }
+]

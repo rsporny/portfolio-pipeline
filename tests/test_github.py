@@ -2,8 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-from pipeline.github import GitHubClient, GitHubError
-from pipeline.models import Commit, Issue, PullRequest
+from pipeline.github import (
+    GitHubClient,
+    GitHubError,
+    closing_issue_numbers,
+    timeline_issue_numbers,
+)
+from pipeline.models import Commit, Issue, LinkedIssue, PullRequest, ReviewComment
 
 from .conftest import load_fixture
 
@@ -91,6 +96,73 @@ def test_error_response_raises_without_token(httpx_mock):
         client.get_commit("o/r", "deadbeef")
     assert "404" in str(excinfo.value)
     assert "secret-token" not in str(excinfo.value)
+
+
+# --- v0.3 deep context ------------------------------------------------------
+
+
+def test_closing_issue_numbers_parses_keywords():
+    body = "This closes #12 and Fixes #34. Also resolved #34 again. See #99 (not a close)."
+    assert closing_issue_numbers(body) == [12, 34]
+
+
+def test_closing_issue_numbers_handles_empty():
+    assert closing_issue_numbers(None) == []
+    assert closing_issue_numbers("no refs here") == []
+
+
+def test_timeline_issue_numbers_skips_prs_and_non_link_events():
+    events = load_fixture("pr_timeline.json")
+    # 99 (cross-referenced issue) and 42 (connected issue); the PR (#7) and the
+    # "labeled" event are ignored.
+    assert timeline_issue_numbers(events) == [99, 42]
+
+
+def test_review_comments_parse_into_model():
+    comments = [
+        ReviewComment.from_api(c, github_user="rsporny", kind="inline")
+        for c in load_fixture("pr_review_comments.json")
+    ]
+    assert comments[0].author_role == "other"
+    assert comments[1].author_role == "owner"
+    assert comments[0].kind == "inline"
+
+
+def test_reviews_and_conversation_endpoints(httpx_mock):
+    httpx_mock.add_response(json=load_fixture("pr_reviews.json"))
+    httpx_mock.add_response(json=load_fixture("issue_comments.json"))
+    httpx_mock.add_response(json=load_fixture("pr_review_comments.json"))
+    httpx_mock.add_response(json=load_fixture("pr_timeline.json"))
+    client = GitHubClient(token="t", base_url=BASE)
+
+    reviews = client.list_pr_reviews("o/r", 5)
+    conversation = client.list_issue_comments("o/r", 5)
+    inline = client.list_pr_review_comments("o/r", 5)
+    timeline = client.list_timeline("o/r", 5)
+
+    assert reviews[0]["state"] == "CHANGES_REQUESTED"
+    assert conversation[1]["user"]["login"] == "maintainer2"
+    assert inline[0]["path"] == "src/pipeline/collect.py"
+    assert timeline[1]["event"] == "connected"
+    # All four hit the PR/issue endpoints for number 5.
+    paths = {str(r.url).split("?")[0] for r in httpx_mock.get_requests()}
+    assert paths == {
+        f"{BASE}/repos/o/r/pulls/5/reviews",
+        f"{BASE}/repos/o/r/issues/5/comments",
+        f"{BASE}/repos/o/r/pulls/5/comments",
+        f"{BASE}/repos/o/r/issues/5/timeline",
+    }
+
+
+def test_linked_issue_from_get_issue(httpx_mock):
+    httpx_mock.add_response(
+        json={"number": 42, "title": "Bug", "html_url": "https://x/42", "state": "closed"}
+    )
+    client = GitHubClient(token="t", base_url=BASE)
+    li = LinkedIssue.from_api(client.get_issue("o/r", 42), relation="closes")
+    assert li.number == 42
+    assert li.title == "Bug"
+    assert li.relation == "closes"
 
 
 # --- token from environment -------------------------------------------------

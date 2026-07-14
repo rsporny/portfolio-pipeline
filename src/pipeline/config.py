@@ -8,6 +8,11 @@ from pydantic import BaseModel, field_validator
 
 class RedactionConfig(BaseModel):
     forbidden_phrases: list[str] = []
+    # When true, GitHub logins / display names / @mentions of anyone other than
+    # github_user are masked to role_placeholder before any model call and before
+    # raw/ is written (raw/ is a public repo). See SPEC Module 3, constraints 3 & 5.
+    redact_third_party_names: bool = True
+    role_placeholder: str = "[collaborator]"
 
 
 class OutputConfig(BaseModel):

@@ -1,0 +1,14 @@
+[
+  {
+    "id": 1,
+    "user": {"login": "reviewer1"},
+    "body": "Can we extract this into a helper? @rsporny",
+    "path": "src/pipeline/collect.py"
+  },
+  {
+    "id": 2,
+    "user": {"login": "rsporny"},
+    "body": "Good call, done.",
+    "path": "src/pipeline/collect.py"
+  }
+]

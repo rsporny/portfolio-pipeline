@@ -23,6 +23,14 @@ initiative provide:
   continues | pivots | concludes | contradicts. Otherwise null. Only reference
   a thread id that appears in the provided list — never invent one.
 
+Some PRs may carry deep context: `review_comments` (a PR's review discussion,
+each tagged author_role owner|other) and `linked_issues` (issues the PR closes or
+references). Use these ONLY to understand what the work was and why — the intent
+behind a change, the problem an issue described, what a decision resolved. This
+context is for your understanding; never quote it and never attribute anything to
+a contributor. Collaborators are already anonymized (no names appear) — keep it
+that way.
+
 Ignore cosmetic commits (typos, formatting) unless they add up to something
 bigger. Respond ONLY with valid JSON matching this schema:
 {"initiatives": [{"name", "category", "what", "why_it_matters", "tech": [],
@@ -47,6 +55,11 @@ You may:
   only ever changed through assumption_updates on an assumption that already
   exists;
 - create a new thread ONLY for work that clearly starts something ongoing.
+
+Where an initiative draws on a PR's review discussion or linked issues, let that
+deepen a thread's summary, a key decision's rationale, or an assumption — but for
+understanding only: never quote or attribute it, and never name a contributor
+(they are already anonymized).
 
 Weeks are not part of this schema: code stamps the current week onto everything
 you create or touch, so never emit a week field. New thread ids must be
@@ -73,7 +86,9 @@ Content policy (mandatory): this is knowledge sharing — "what I built and what
 learned" — never a pitch. No calls to action, no offers of services, no
 availability announcements, no solicitation of any kind. Present only the
 owner's own perspective; never quote or name any third party (reviewers,
-collaborators). Claim only what the initiatives below support — no invented
+collaborators). Where an initiative reflects review discussion or linked issues,
+that context informs your understanding only — it never appears verbatim and is
+never attributed. Claim only what the initiatives below support — no invented
 metrics, no embellished outcomes.
 
 Readability comes first: write for an engineer who does not know these
