@@ -1,0 +1,25 @@
+threads:
+  - id: auth-revamp
+    title: Auth revamp
+    status: ongoing
+    started_week: 2026-W22
+    last_active_week: 2026-W28
+    summary: >-
+      Moving session auth to short-lived tokens with refresh. The token issuer
+      shipped last month; this week rotates refresh tokens on use.
+    assumptions:
+      - text: A 15-minute access-token lifetime is short enough without hurting UX.
+        made_week: 2026-W22
+        status: open
+  - id: billing-migration
+    title: Billing migration
+    status: ongoing
+    started_week: 2026-W26
+    last_active_week: 2026-W28
+    summary: >-
+      Migrating billing off the legacy provider. The adapter is written; this
+      week backfills historical invoices.
+    assumptions:
+      - text: Historical invoices can be reconstructed from the event log alone.
+        made_week: 2026-W26
+        status: open

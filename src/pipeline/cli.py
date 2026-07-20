@@ -3,11 +3,20 @@ from __future__ import annotations
 import logging
 import sys
 from collections.abc import Callable
+from pathlib import Path
 
 import typer
 
 from .collect import collect_activity, write_activity
 from .config import Config, load_config
+from .evals import (
+    DEFAULT_CASES_DIR,
+    DEFAULT_OUTPUT,
+    git_sha,
+    has_errors,
+    render_scorecard,
+    run_cases,
+)
 from .github import GitHubClient
 from .llm import LLMClient, TransformError
 from .memory import Thread
@@ -211,3 +220,42 @@ def publish_custom_cmd(
         raise typer.Exit(1) from exc
     typer.echo(f"Wrote {result.site_file} → {result.series} #{result.n}")
     typer.echo("Verify locally in the site repo, then commit + merge to publish.")
+
+
+CASE_OPTION = typer.Option(None, "--case", help="Golden case id to run (repeatable); default all")
+CASES_DIR_OPTION = typer.Option(
+    str(DEFAULT_CASES_DIR), "--cases-dir", help="Golden cases directory"
+)
+EVAL_OUT_OPTION = typer.Option(str(DEFAULT_OUTPUT), "--out", help="Scorecard output path")
+
+
+@app.command("eval")
+def eval_cmd(
+    case: list[str] | None = CASE_OPTION,
+    cases_dir: str = CASES_DIR_OPTION,
+    out: str = EVAL_OUT_OPTION,
+    config: str = CONFIG_OPTION,
+) -> None:
+    """Run the transformer over the golden cases and score it with the structural
+    checks (v0.4). Writes a Markdown scorecard and exits non-zero if any case has
+    an error-severity failure. Requires ANTHROPIC_API_KEY — never runs in unit CI."""
+    cfg = load_config(config)
+    llm = LLMClient(model=cfg.anthropic.model, max_tokens=cfg.anthropic.max_tokens)
+    try:
+        cases = run_cases(Path(cases_dir), llm, case_ids=case or None)
+    except ValueError as exc:
+        typer.echo(f"eval failed: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    scorecard = render_scorecard(cases, model=cfg.anthropic.model, sha=git_sha())
+    out_path = Path(out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(scorecard)
+
+    for case_result in cases:
+        status = "BLOCKED" if case_result.blocked else "ok"
+        typer.echo(f"  [{status}] {case_result.case_id}: {case_result.description}")
+    typer.echo(f"Wrote scorecard → {out_path}")
+    if has_errors(cases):
+        typer.echo("Eval failed: error-severity check failure(s).", err=True)
+        raise typer.Exit(1)

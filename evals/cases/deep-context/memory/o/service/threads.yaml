@@ -1,0 +1,14 @@
+threads:
+  - id: rate-limiting
+    title: Request rate limiting
+    status: ongoing
+    started_week: 2026-W25
+    last_active_week: 2026-W27
+    summary: >-
+      Adding per-tenant rate limiting to protect the shared database. A token
+      bucket is in place; this week moves the counter to a shared store so it
+      holds across instances.
+    assumptions:
+      - text: A per-tenant limit is enough; we do not yet need per-endpoint limits.
+        made_week: 2026-W25
+        status: open

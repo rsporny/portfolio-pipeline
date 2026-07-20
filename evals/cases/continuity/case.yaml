@@ -1,0 +1,5 @@
+description: "Repo with an ongoing thread — the entry should weave in continuity."
+github_user: rsporny
+allowlist: [o/pipeline]
+descriptions:
+  o/pipeline: "A data ingestion pipeline (Python)."

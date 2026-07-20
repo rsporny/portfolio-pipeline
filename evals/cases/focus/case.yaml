@@ -1,0 +1,8 @@
+description: "Two active threads + a focus directive — per-topic sections."
+github_user: rsporny
+allowlist: [o/platform]
+descriptions:
+  o/platform: "An internal platform service (Python)."
+focus:
+  - auth-revamp
+  - billing-migration
