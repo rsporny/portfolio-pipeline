@@ -1,0 +1,18 @@
+threads:
+  - id: streaming-ingest
+    title: Streaming ingestion path
+    status: ongoing
+    started_week: 2026-W24
+    last_active_week: 2026-W27
+    summary: >-
+      Replacing the nightly batch load with a streaming ingestion path. The
+      consumer and a schema registry are in place; the cutover is staged behind
+      a flag.
+    assumptions:
+      - text: At-least-once delivery is acceptable if we dedupe downstream.
+        made_week: 2026-W24
+        status: open
+    key_decisions:
+      - week: 2026-W24
+        decision: Consume from the log directly rather than through the batch table.
+        rationale: Lower end-to-end latency and one fewer moving part.

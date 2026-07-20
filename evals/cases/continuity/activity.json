@@ -1,0 +1,33 @@
+{
+  "schema_version": 3,
+  "generated_at": "2026-07-12T16:00:00Z",
+  "since": "2026-07-05T16:00:00Z",
+  "until": "2026-07-12T16:00:00Z",
+  "week": "2026-W28",
+  "repos": [
+    {
+      "repo": "o/pipeline",
+      "commits": [
+        {
+          "sha": "d1",
+          "date": "2026-07-07T11:00:00Z",
+          "message": "Add idempotent dedupe keyed on event id for the streaming path",
+          "url": "https://github.com/o/pipeline/commit/d1",
+          "files": [{"filename": "ingest/dedupe.py", "additions": 85, "deletions": 2, "changes": 87}]
+        }
+      ],
+      "pull_requests": [
+        {
+          "number": 34,
+          "title": "Dedupe downstream so at-least-once delivery is safe",
+          "description": "Adds a downstream dedupe keyed on event id, which lets us accept at-least-once delivery from the log without double-processing.",
+          "labels": ["streaming"],
+          "state": "closed",
+          "url": "https://github.com/o/pipeline/pull/34",
+          "merged_at": "2026-07-10T09:00:00Z"
+        }
+      ],
+      "issues": []
+    }
+  ]
+}

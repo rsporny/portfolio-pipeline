@@ -1,0 +1,49 @@
+{
+  "schema_version": 3,
+  "generated_at": "2026-07-12T16:00:00Z",
+  "since": "2026-07-05T16:00:00Z",
+  "until": "2026-07-12T16:00:00Z",
+  "week": "2026-W28",
+  "repos": [
+    {
+      "repo": "o/platform",
+      "commits": [
+        {
+          "sha": "e1",
+          "date": "2026-07-06T10:00:00Z",
+          "message": "Rotate refresh tokens on use and revoke the prior one",
+          "url": "https://github.com/o/platform/commit/e1",
+          "files": [{"filename": "auth/refresh.py", "additions": 70, "deletions": 12, "changes": 82}]
+        },
+        {
+          "sha": "e2",
+          "date": "2026-07-09T14:00:00Z",
+          "message": "Backfill historical invoices from the event log",
+          "url": "https://github.com/o/platform/commit/e2",
+          "files": [{"filename": "billing/backfill.py", "additions": 120, "deletions": 3, "changes": 123}]
+        }
+      ],
+      "pull_requests": [
+        {
+          "number": 51,
+          "title": "Rotate refresh tokens on use",
+          "description": "Refresh tokens are now single-use: using one issues a new pair and revokes the old, limiting the blast radius of a leaked token.",
+          "labels": ["auth"],
+          "state": "closed",
+          "url": "https://github.com/o/platform/pull/51",
+          "merged_at": "2026-07-07T09:00:00Z"
+        },
+        {
+          "number": 52,
+          "title": "Backfill invoices from the event log",
+          "description": "Reconstructs historical invoices from the billing event log so the migration off the legacy provider is complete.",
+          "labels": ["billing"],
+          "state": "closed",
+          "url": "https://github.com/o/platform/pull/52",
+          "merged_at": "2026-07-10T16:00:00Z"
+        }
+      ],
+      "issues": []
+    }
+  ]
+}

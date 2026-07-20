@@ -1,0 +1,41 @@
+{
+  "schema_version": 3,
+  "generated_at": "2026-07-12T16:00:00Z",
+  "since": "2026-07-05T16:00:00Z",
+  "until": "2026-07-12T16:00:00Z",
+  "week": "2026-W28",
+  "repos": [
+    {
+      "repo": "o/service",
+      "commits": [
+        {
+          "sha": "f1",
+          "date": "2026-07-08T13:00:00Z",
+          "message": "Move the rate-limit counter to a shared store",
+          "url": "https://github.com/o/service/commit/f1",
+          "files": [{"filename": "ratelimit/store.py", "additions": 95, "deletions": 20, "changes": 115}]
+        }
+      ],
+      "pull_requests": [
+        {
+          "number": 77,
+          "title": "Shared-store rate limiting across instances",
+          "description": "Moves the token-bucket counter into a shared store so the per-tenant limit holds across all instances. Closes #70.",
+          "labels": ["reliability"],
+          "state": "closed",
+          "url": "https://github.com/o/service/pull/77",
+          "merged_at": "2026-07-11T10:00:00Z",
+          "review_comments": [
+            {"body": "What happens if the shared store is briefly unavailable — do we fail open or closed?", "author_role": "other", "kind": "review"},
+            {"body": "Fail open for now, with a metric so we can see it. A hard fail would take down every tenant on a blip.", "author_role": "owner", "kind": "conversation"},
+            {"body": "Consider a short local fallback window so a blip does not remove limiting entirely.", "author_role": "other", "kind": "inline"}
+          ],
+          "linked_issues": [
+            {"number": 70, "title": "Rate limit is per-instance, so the real limit is N times higher", "url": "https://github.com/o/service/issues/70", "state": "closed", "relation": "closes"}
+          ]
+        }
+      ],
+      "issues": []
+    }
+  ]
+}

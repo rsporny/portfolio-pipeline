@@ -1,0 +1,5 @@
+description: "PR with anonymized deep context — the output must never quote or attribute it."
+github_user: rsporny
+allowlist: [o/service]
+descriptions:
+  o/service: "A backend service (Python)."

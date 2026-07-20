@@ -1,0 +1,5 @@
+description: "Single repo, no memory — the plain weekly entry."
+github_user: rsporny
+allowlist: [o/webapp]
+descriptions:
+  o/webapp: "A small web application with a Python backend."
