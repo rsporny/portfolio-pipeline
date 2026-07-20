@@ -2,7 +2,7 @@
 
 ## What this project is
 
-An automated "commit → content" pipeline: once a week it collects the owner's public development activity (commits, PRs, closed issues from GitHub) and uses the Claude API to turn it into content drafts — a titled, auto-numbered devlog entry, one channel-neutral English social post, and a list of highlights. Since v0.2 the pipeline has **memory**: it maintains a registry of work threads per organization/repository (`memory/{org}/{repo}/`), so weekly entries connect into longer arcs — features, assumptions, pivots — instead of isolated snapshots. Since v0.3 it also has **selective deep context**: for a repo with an active thread, the collector enriches each PR with its review discussion and linked issues (`activity.json` is `schema_version: 3`). That input is anonymized in the collector — third-party logins/names/`@mentions`/`Co-authored-by` are masked to `[collaborator]` before `raw/` is written — so it is used for understanding only and never quoted or attributed.
+An automated "commit → content" pipeline: once a week it collects the owner's public development activity (commits, PRs, closed issues from GitHub) and uses the Claude API to turn it into content drafts — a titled, auto-numbered devlog entry, one channel-neutral English social post, and a list of highlights. Since v0.2 the pipeline has **memory**: it maintains a registry of work threads per organization/repository (`memory/{org}/{repo}/`), so weekly entries connect into longer arcs — features, assumptions, pivots — instead of isolated snapshots. Since v0.3 it also has **selective deep context**: for a repo with an active thread, the collector enriches each PR with its review discussion and linked issues (`activity.json` is `schema_version: 3`). That input is anonymized in the collector — third-party logins/names/`@mentions`/`Co-authored-by` are masked to `[collaborator]` before `raw/` is written — so it is used for understanding only and never quoted or attributed. Since v0.4 the transformer has a **structural check suite** (`src/pipeline/checks.py`): every generated draft is scored for content-policy compliance and faithfulness, and `transform_week` blocks the run on a hard violation (solicitation, a leaked collaborator, an invented proof-of-work link). `pipeline eval` runs the same checks over golden cases (`evals/cases/`) and publishes a scorecard.
 
 Publishing is a pull request against the owner's website repo; **merge = publish** (Cloudflare deploys on merge). The pipeline never merges — a human always reviews first.
 
@@ -40,8 +40,9 @@ This is a building-in-public project: a practical experiment in wiring AI into a
 - `uv run pipeline review` — list drafts awaiting review (local/offline flow)
 - `uv run pipeline publish --site-repo <path>` — render via the site adapter into a website checkout (used by CI and locally)
 - `uv run pipeline publish-custom <file.md> --site-repo <path>` — turn a hand-written Markdown file (first `# H1` = title) into a `type: custom` devlog entry in the website repo + regenerate the manifest (numbering assigned by the pipeline; file-only, no push)
+- `uv run pipeline eval` — v0.4 eval suite: run the transformer over the golden cases in `evals/cases/` and score the output with the structural check library, writing a scorecard to `evals/RESULTS.md`. Requires `ANTHROPIC_API_KEY`; exits non-zero on any error-severity check failure. `--case <id>` (repeatable) runs a subset
 - `uv run pytest` — tests
 
 ## Detailed specification
 
-See `SPEC.md` in the repo root. Do not implement roadmap items (v0.3+) ahead of schedule.
+See `SPEC.md` in the repo root. Do not implement roadmap items (v0.5+) ahead of schedule.

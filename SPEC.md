@@ -14,7 +14,7 @@ This project produces knowledge-sharing content: "what I built and what I learne
 - present only the owner's own perspective; input from other people (review comments, discussions) may inform understanding but is never quoted or attributed — third-party names are redacted by default;
 - claim only what is supported by the collected activity (no invented metrics, no embellished outcomes).
 
-These rules are part of the Stage B prompt and must also be enforced structurally where possible (see redaction; automated checks arrive in v0.4).
+These rules are part of the Stage B prompt and must also be enforced structurally where possible — see redaction, and (since v0.4) the structural check suite that scores every generated draft and **blocks** the run on a hard violation (see Tests / eval suite below).
 
 Content language and format (decided in v0.1, retained): the devlog and social post are written in **English**; there is a single, channel-neutral **social** post (the website owns per-platform share buttons). The work is categorized and generalized for a broad engineering audience, and the devlog ends with a proof-of-work link.
 
@@ -233,7 +233,32 @@ The local `review` / `publish` commands remain for manual/offline operation; `pu
 - transformer: model-response parsing (valid JSON / fenced / broken → failure path), retry logic (mocked), indexer-failure fallback.
 - site adapter: entry + manifest rendering golden tests.
 - publish: file operations in tmp_path; CI path and local path share the code under test.
+- checks (v0.4): each structural check's pass and fail path over handcrafted output.
+- eval runner (v0.4): case discovery, scratch isolation, scorecard rendering, and the
+  error/warn tally — driven by a fake LLM (the real-model path runs only in `evals.yml`).
 - Zero real network calls in tests.
+
+### Eval suite (v0.4)
+
+The transformer's output is verified two ways, both built on one pure check library
+(`src/pipeline/checks.py`): structural **property assertions** — valid schema (Pydantic),
+word limits, hashtag budget, no solicitation/CTA, no leaked collaborator (`@mention` /
+placeholder), no forbidden phrase, and **faithfulness** (every cited URL exists in the
+week's activity; initiatives invent no links). Each check is `error` (hard content
+policy) or `warn` (soft quality).
+
+- **In production**, `transform_week` runs the checks after Stage B, writes a
+  `checks.md`/`checks.json` report into the draft bundle, logs warnings, and **halts the
+  run on any `error`-severity failure** — a solicitation, a leaked name, or an invented
+  link never reaches a PR (the drafts stay on disk for inspection).
+- **Golden runner**: `pipeline eval` runs the real transformer over curated
+  `evals/cases/**` (baseline, thread continuity, focus, anonymized deep context), scores
+  each with the same checks, and writes a committed Markdown scorecard (`evals/RESULTS.md`).
+- **CI**: `.github/workflows/evals.yml` runs the golden runner on `workflow_dispatch` and
+  on `push` to `main` touching the prompt/model surface. It is the only workflow holding
+  `ANTHROPIC_API_KEY`, kept behind a protected `evals` environment and never triggered by a
+  fork PR, so an untrusted contributor can never spend the key. It fails the job on any
+  `error`-severity failure — the pre-merge gate for a prompt or model change.
 
 ## README.md
 
@@ -241,62 +266,35 @@ Public, building-in-public repo. Must include: data-flow diagram, the human-in-t
 
 ## Roadmap (do not implement ahead of schedule)
 
-- **v0.3** — selective deep context: review comments and linked issues fetched only for PRs in repos with an active thread; third-party input used for understanding only, never quoted (policy above already applies). Sub-issue parent/child graph deferred.
-- **v0.4** — eval suite for the transformer: golden examples, property assertions (valid JSON, content-policy compliance, word limits, faithfulness to activity), run in CI on every prompt/model change, results published.
+- **v0.3** ✅ *shipped* — selective deep context: review comments and linked issues fetched only for PRs in repos with an active thread; third-party input used for understanding only, never quoted (policy above already applies). Sub-issue parent/child graph deferred.
+- **v0.4** ✅ *shipped* — eval suite for the transformer: golden examples, property assertions (valid JSON, content-policy compliance, word limits, faithfulness to activity), run in CI on every prompt/model change, results published.
 - **v0.5** — provenance: signed entries + weekly hash anchoring (merkle root) on Cardano.
 - **v1.0** — experiment: ZK-based verifiable claims about private activity (Midnight).
 
-## Implementation order for v0.2 (milestones)
+## Status
 
-1. Memory module: schema, loader/validator, deterministic mutation application + tests.
-2. Collector change: commit `raw/` (schema unchanged) + tests.
-3. Transformer: memory-aware Stage A, indexer, thread-aware Stage B + tests.
-4. Site adapter extraction (`sporny_pl`) + golden tests.
-5. CI workflow: cross-repo PR flow, bot commits, artifacts + README update.
+Per-version "what shipped" record (the numbered build plans that produced each
+version are complete and no longer carried here).
 
-After each milestone: a working state, green tests, a commit.
+**v0.2.0** — memory era. The pipeline tracks work threads per org/repo; the weekly
+workflow auto-picks the lead thread (no TTY → no prompt), a `workflow_dispatch`
+`focus` input can override it, and the Action commits each week's `raw/` snapshot
+and `memory/` updates back to `main` as labeled bot commits — derived, regenerable
+state that outlives the ≤90-day artifacts. The Action only *opens* a PR, never merges.
 
-**Status (v0.2.0):** all five milestones delivered. Milestone 5 brought the weekly
-workflow into the memory era: the scheduled run auto-picks the lead thread (no TTY →
-no prompt), a `workflow_dispatch` `focus` input can override it for manual runs, and
-the Action now commits each week's `raw/` snapshot and `memory/` updates back to
-`main` as labeled bot commits — derived, regenerable state that must outlive the
-≤90-day workflow artifacts so continuity survives week to week. The website side is
-unchanged: the Action only *opens* a PR and never merges.
+**v0.3.0** — selective deep context. The collector enriches the owner-PRs of any
+repo with an ongoing thread with review discussion and linked issues, and the
+long-specified third-party name redaction is implemented — anonymization happens in
+the collector so `raw/` (public) never carries a collaborator's name, while phrase
+redaction still runs before every model call. `schema_version` is now 3 (v2 files
+still parse). Deep context reaches the model structurally, guarded by "understanding
+only, never quote" instructions across Stage A / indexer / Stage B.
 
-## Implementation order for v0.3 (milestones)
-
-Selective deep context — richer signal for ongoing arcs without deep-fetching
-every one-off chore. Gating is **repo-level at collect time**: a brand-new PR's
-thread membership only exists after Stage A, so instead of a two-pass transform,
-deep context is fetched for the owner-PRs of any repo that has an active thread
-in memory. Deep data lands (anonymized) in `raw/` — reproducible and auditable.
-
-1. Third-party name redaction: `redact_names` + `redaction.redact_third_party_names`
-   config (the SPEC Module 3 step, previously unimplemented) + tests. Foundation
-   for persisting anyone else's words.
-2. Deep-context schema: `schema_version: 3`, `ReviewComment` / `LinkedIssue` on
-   `PullRequest` (empty on schema-2 files) + back-compat tests.
-3. Collector deep fetch: GitHub client methods for PR review comments, review
-   summaries, conversation comments, and linked issues (body closing-keywords +
-   timeline cross-references) + fixture tests.
-4. Collector gating + anonymize: load memory, deep-fetch only repos with an
-   active thread, gather the participant name-set, redact third-party names
-   across the activity before writing `raw/` + tests.
-5. Prompt guardrails: Stage A / indexer / Stage B told deep context is for
-   understanding only — never quoted or attributed; contributors are already
-   anonymized. Deep context reaches the model structurally (it rides on the PRs
-   in the activity JSON) + tests.
-6. Docs: SPEC status, README, CLAUDE, config keys.
-
-After each milestone: a working state, green tests, a commit. The website side is
-untouched — v0.3 changes only what the pipeline *knows*, not how it publishes.
-
-**Status (v0.3.0):** all six milestones delivered. The collector now enriches the
-owner-PRs of any repo with an ongoing thread with review discussion and linked
-issues, and the SPEC's long-specified third-party name redaction is finally
-implemented — anonymization happens in the collector so `raw/` (a public repo)
-never carries a collaborator's name, while phrase redaction still runs before
-every model call. `schema_version` is now 3 (v2 files still parse). Deep context
-reaches the model structurally, guarded by "understanding only, never quote"
-instructions across Stage A / indexer / Stage B. Next: v0.4 (see roadmap).
+**v0.4.0** — transformer eval suite. A pure structural check library
+(`src/pipeline/checks.py`) scores every generated draft on content policy and
+faithfulness; `transform_week` runs it after Stage B and **blocks** the run on any
+hard (`error`-severity) violation. `pipeline eval` runs the real transformer over
+`evals/cases/**` and writes a committed scorecard (`evals/RESULTS.md`); `evals.yml`
+drives it in CI on prompt/model changes, behind a protected environment and never
+reachable by a fork PR (the only workflow holding `ANTHROPIC_API_KEY`). Next: v0.5
+(see roadmap).

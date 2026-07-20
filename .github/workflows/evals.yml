@@ -1,0 +1,87 @@
+name: Evals
+
+# Runs the transformer eval suite (golden cases → structural checks) against the
+# REAL model. This is the ONLY workflow that touches ANTHROPIC_API_KEY, so it is
+# deliberately unreachable by an untrusted fork PR:
+#   * it never triggers on `pull_request` (GitHub does not pass secrets to a fork
+#     PR anyway) and never uses `pull_request_target` (the secret-leaking footgun);
+#   * `workflow_dispatch` requires repo write access, and `push` fires only on
+#     branches pushed to this repo (outside collaborators cannot push).
+# The key lives in a PROTECTED `evals` environment with a required reviewer, so
+# even a dispatched run must be approved before the secret is exposed. One-time
+# owner setup (out of band): create the `evals` environment + reviewer in repo
+# settings, and set an Anthropic spend cap on the key.
+#
+# Trigger scope: prompt/model changes only — editing a prompt, the checks, the
+# model config, or a golden case re-scores the suite. RESULTS.md is outside the
+# paths filter, so the bot commit below never re-triggers the workflow.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "src/pipeline/prompts.py"
+      - "src/pipeline/checks.py"
+      - "config.yaml"
+      - "evals/cases/**"
+
+permissions:
+  contents: write # to commit the scorecard back to main
+
+concurrency:
+  group: evals
+  cancel-in-progress: false
+
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    environment: evals # protected: required reviewer gates access to the key
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: uv sync --all-groups
+
+      - name: Run evals
+        id: eval
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          set +e
+          uv run pipeline eval
+          echo "exit=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Publish scorecard to job summary
+        if: always()
+        run: cat evals/RESULTS.md >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Upload eval artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-results
+          path: evals/RESULTS.md
+          if-no-files-found: ignore
+
+      - name: Commit scorecard (bot)
+        if: always() && github.ref == 'refs/heads/main'
+        run: |
+          git config user.name "portfolio-pipeline[bot]"
+          git config user.email "portfolio-pipeline[bot]@users.noreply.github.com"
+          git add evals/RESULTS.md
+          if git diff --cached --quiet; then
+            echo "Scorecard unchanged."
+          else
+            git commit -m "chore(bot): update eval scorecard"
+            git pull --rebase --autostash origin main
+            git push origin HEAD:main
+          fi
+
+      - name: Fail on error-severity check failure
+        if: always()
+        run: test "${{ steps.eval.outputs.exit }}" = "0"
