@@ -3,12 +3,13 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
 from pydantic import BaseModel, ValidationError
 
+from .checks import CheckResult, build_context, check_content, check_initiatives, failures
 from .config import Config
 from .llm import LLMClient, TransformError
 from .memory import (
@@ -276,6 +277,45 @@ def _run_indexer(
         mem.changed = True
 
 
+def _render_checks(results: list[CheckResult]) -> str:
+    """A human-readable checks report for the draft bundle. Ordered errors first
+    so a reviewer sees the blocking violations at the top."""
+    lines = ["# Content checks", ""]
+    ranked = sorted(results, key=lambda r: (r.passed, r.severity != "error"))
+    for r in ranked:
+        mark = "✓" if r.passed else ("✗" if r.severity == "error" else "!")
+        detail = f" — {r.detail}" if r.detail else ""
+        lines.append(f"- {mark} [{r.severity}] {r.name}{detail}")
+    return "\n".join(lines) + "\n"
+
+
+def _run_checks(
+    content: Content,
+    initiatives: Initiatives,
+    activity: Activity,
+    config: Config,
+    thread_ids: set[str],
+    out_dir: Path,
+) -> list[CheckResult]:
+    """Structural content-policy checks on the generated output (SPEC line 17).
+    Persists the report (``checks.md`` for humans, ``checks.json`` for the eval
+    runner), logs ``warn``-severity issues, and returns the results. It does NOT
+    decide policy — the caller enforces (production blocks on ``error``, the eval
+    runner only tallies)."""
+    ctx = build_context(
+        activity,
+        forbidden_phrases=config.redaction.forbidden_phrases,
+        placeholder=config.redaction.role_placeholder,
+        thread_ids=thread_ids,
+    )
+    results = check_content(content, ctx) + check_initiatives(initiatives, ctx)
+    (out_dir / "checks.md").write_text(_render_checks(results))
+    (out_dir / "checks.json").write_text(json.dumps([asdict(r) for r in results], indent=2))
+    for warning in failures(results, "warn"):
+        logger.warning("Check %s: %s", warning.name, warning.detail)
+    return results
+
+
 def _front_matter(week: str, generated_at: str, title: str, source_initiatives: list[str]) -> str:
     lines = [
         "---",
@@ -324,6 +364,7 @@ def transform_week(
     week: str | None = None,
     memory_root: Path | str | None = None,
     focus_selector: Callable[[list[Thread]], list[str]] | None = None,
+    enforce_checks: bool = True,
 ) -> Path:
     """Run redaction → Stage A (memory-aware) → indexer → Stage B (thread-aware)
     and write the draft bundle for a week. Memory mutations are applied to the
@@ -403,5 +444,19 @@ def transform_week(
     (out_dir / "social.md").write_text(front + content.social.rstrip() + "\n")
     highlights = "\n".join(f"- {item}" for item in content.highlights)
     (out_dir / "highlights.md").write_text(front + highlights + "\n")
+
+    # Structural content-policy checks — drafts are already on disk, so a blocking
+    # violation still leaves them (and the report) for inspection. Any
+    # error-severity failure (solicitation, collaborator leak, forbidden phrase,
+    # invented link) HALTS the run so it never reaches a PR; the eval runner sets
+    # enforce_checks=False to score failing cases without aborting.
+    thread_ids = {t.id for mem in memories for t in mem.registry.threads}
+    results = _run_checks(content, initiatives, activity, config, thread_ids, out_dir)
+    errors = failures(results, "error")
+    if errors:
+        summary = "; ".join(f"{e.name} ({e.detail})" for e in errors)
+        logger.error("Content checks failed (%d error-severity): %s", len(errors), summary)
+        if enforce_checks:
+            raise TransformError(f"content policy checks failed: {summary}")
 
     return out_dir

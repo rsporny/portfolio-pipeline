@@ -212,7 +212,23 @@ def _write_activity(raw_dir, week: str = "2026-W27") -> str:
         repos=[
             RepoActivity(
                 repo="o/r",
-                commits=[Commit(sha="a1", date=now, message="Add collector", files=[])],
+                commits=[
+                    Commit(
+                        sha="a1",
+                        date=now,
+                        message="Add collector",
+                        url="https://github.com/o/r/commit/a1",
+                        files=[],
+                    )
+                ],
+                pull_requests=[
+                    PullRequest(
+                        number=5, title="Add collector", url="https://github.com/o/r/pull/5"
+                    ),
+                    PullRequest(
+                        number=6, title="Extend collector", url="https://github.com/o/r/pull/6"
+                    ),
+                ],
             )
         ],
     )
@@ -228,6 +244,7 @@ def _write_activity_with_deep_pr(raw_dir, week: str = "2026-W27") -> str:
     pr = PullRequest(
         number=5,
         title="Add collector",
+        url="https://github.com/o/r/pull/5",
         description="Closes #42",
         review_comments=[
             ReviewComment(body="Gate this on active threads.", author_role="other", kind="review"),
@@ -305,6 +322,78 @@ def test_transform_week_writes_all_drafts(tmp_path):
     assert "Developer tooling" in summary  # category rendered
     assert "https://github.com/o/r/pull/5" in summary  # proof-of-work link
     assert "- Collector — 23 tests passing" in (out_dir / "highlights.md").read_text()
+    # Every run drops a checks report into the bundle (SPEC line 17).
+    assert (out_dir / "checks.md").exists()
+
+
+def _stage_b_bad(**overrides):
+    data = {
+        "title": "Wiring commits into a content pipeline",
+        "devlog": "This week I built the collector. See https://github.com/o/r/pull/5",
+        "social": "This week I shipped a collector.",
+        "highlights": ["Collector — 23 tests passing"],
+    }
+    data.update(overrides)
+    return data, json.dumps(data)
+
+
+def test_warn_only_violation_still_writes_drafts(tmp_path):
+    # A short devlog trips the word-count WARN but must not block the run.
+    raw_dir, drafts_dir = tmp_path / "raw", tmp_path / "drafts"
+    week = _write_activity(raw_dir)
+    llm = _FakeLLM([_stage_a(), _indexer(), _stage_b()])
+
+    out_dir = transform_week(
+        _config(),
+        llm,
+        raw_dir=raw_dir,
+        drafts_dir=drafts_dir,
+        week=week,
+        memory_root=tmp_path / "memory",
+    )
+
+    assert (out_dir / "devlog.md").exists()
+    checks = (out_dir / "checks.md").read_text()
+    assert "devlog_word_count" in checks
+
+
+def test_solicitation_blocks_run_but_persists_drafts(tmp_path):
+    raw_dir, drafts_dir = tmp_path / "raw", tmp_path / "drafts"
+    week = _write_activity(raw_dir)
+    bad = _stage_b_bad(social="Loved building this. Contact me to learn more.")
+    llm = _FakeLLM([_stage_a(), _indexer(), bad])
+
+    with pytest.raises(TransformError, match="content policy checks failed"):
+        transform_week(
+            _config(),
+            llm,
+            raw_dir=raw_dir,
+            drafts_dir=drafts_dir,
+            week=week,
+            memory_root=tmp_path / "memory",
+        )
+
+    out_dir = drafts_dir / week
+    assert (out_dir / "devlog.md").exists()  # drafts persisted for inspection
+    assert "no_solicitation" in (out_dir / "checks.md").read_text()
+
+
+def test_invented_link_blocks_run(tmp_path):
+    raw_dir, drafts_dir = tmp_path / "raw", tmp_path / "drafts"
+    week = _write_activity(raw_dir)
+    bad = _stage_b_bad(devlog="Built it. See https://evil.example.com/made-up")
+    llm = _FakeLLM([_stage_a(), _indexer(), bad])
+
+    with pytest.raises(TransformError, match="content policy checks failed"):
+        transform_week(
+            _config(),
+            llm,
+            raw_dir=raw_dir,
+            drafts_dir=drafts_dir,
+            week=week,
+            memory_root=tmp_path / "memory",
+        )
+    assert "faithful_links" in (drafts_dir / week / "checks.md").read_text()
 
 
 def test_transform_redacts_input_before_sending(tmp_path):
