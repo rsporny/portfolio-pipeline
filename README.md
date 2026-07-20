@@ -86,6 +86,38 @@ exactly what you tell it to and nothing more. It keeps the blast radius small,
 makes runs reproducible, and means the GitHub token can be a fine-grained PAT
 with read-only scope on a handful of named repos.
 
+## Evals & content checks
+
+The content policy (no solicitation, never name a collaborator, claim only what
+the activity supports) lives in the prompts — but prompts are guidance, not a
+guarantee. Since v0.4 a small **pure check library** (`src/pipeline/checks.py`)
+verifies the output *structurally*: word limits, hashtag budget, no
+solicitation/CTA, no leaked `@mention` or anonymization placeholder, no forbidden
+phrase, and **faithfulness** — every URL the devlog cites must exist in that
+week's collected activity, and initiatives may invent no links. Each check is
+either `error` (hard policy) or `warn` (soft quality).
+
+Two places use it, one implementation:
+
+- **Every real run.** After Stage B, `transform_week` scores the draft, writes a
+  `checks.md`/`checks.json` report into the bundle, and **halts on any
+  `error`-severity failure** — a solicitation, a leaked name, or an invented
+  proof-of-work link never reaches a PR. The offending drafts stay on disk so I
+  can see what the model did.
+- **Golden runner.** `pipeline eval` runs the real transformer over curated cases
+  in `evals/cases/` (a plain weekly entry, a thread that continues, a two-thread
+  focus, and a PR carrying anonymized review discussion), scores each with the
+  same checks, and writes a committed scorecard at
+  [`evals/RESULTS.md`](evals/RESULTS.md).
+
+In CI, `.github/workflows/evals.yml` runs the golden runner on demand
+(`workflow_dispatch`) and whenever a prompt, the checks, the model config, or a
+golden case changes on `main` — the pre-merge gate for a prompt or model change.
+It is the only workflow that holds `ANTHROPIC_API_KEY`, kept behind a protected
+`evals` environment with a required reviewer and **never triggered by a pull
+request**, so a fork PR can never spend the key (GitHub does not pass secrets to
+fork-PR workflows, and this one does not run on them at all).
+
 ## Quickstart
 
 ```bash
@@ -106,6 +138,7 @@ uv run pipeline transform --focus <thread-id>   # lead the entry on specific thr
 uv run pipeline run                # collect + transform
 uv run pipeline review             # list drafts awaiting review
 uv run pipeline publish            # copy approved/ devlog into the sporny.pl repo (manual, no push)
+uv run pipeline eval               # score the transformer over the golden cases → evals/RESULTS.md
 
 uv run pytest                      # the tests are part of the story
 ```
@@ -148,6 +181,14 @@ Two more one-time changes so the Action targets *your* site, not mine:
 The schedule is a `cron` in `weekly.yml` (Sundays 16:00 UTC); adjust to taste, or
 trigger a run by hand from the Actions tab (*Run workflow*), optionally passing
 `since` for a backfill and `focus` to lead on specific thread(s).
+
+**Eval workflow (optional, uses the model).** `evals.yml` calls the paid API, so
+its `ANTHROPIC_API_KEY` should live in a **protected environment**, not a plain
+repo secret: create an environment named `evals` (*Settings → Environments*), add
+`ANTHROPIC_API_KEY` to it, and set a **required reviewer** so each run must be
+approved before the key is exposed. The workflow never runs on a pull request, so
+a fork PR can't reach the key regardless; the environment is defense in depth. Set
+a spend cap on the key too.
 
 ## Sample draft
 
