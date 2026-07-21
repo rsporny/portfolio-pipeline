@@ -7,10 +7,12 @@ name: Evals
 #     PR anyway) and never uses `pull_request_target` (the secret-leaking footgun);
 #   * `workflow_dispatch` requires repo write access, and `push` fires only on
 #     branches pushed to this repo (outside collaborators cannot push).
-# The key lives in a PROTECTED `evals` environment with a required reviewer, so
-# even a dispatched run must be approved before the secret is exposed. One-time
-# owner setup (out of band): create the `evals` environment + reviewer in repo
-# settings, and set an Anthropic spend cap on the key.
+# The job references a PROTECTED `evals` environment with a required reviewer, so
+# even a dispatched run pauses for manual approval before it can spend the key —
+# the approval gate comes from referencing the environment, not from where the
+# key is stored (it reuses the same ANTHROPIC_API_KEY repo secret as weekly.yml).
+# One-time owner setup (out of band): create the `evals` environment + reviewer in
+# repo settings, and set an Anthropic spend cap on the key.
 #
 # Trigger scope: prompt/model changes only — editing a prompt, the checks, the
 # model config, or a golden case re-scores the suite. RESULTS.md is outside the
