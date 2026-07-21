@@ -1,0 +1,647 @@
+{
+  "schema_version": 3,
+  "generated_at": "2026-07-21T10:00:30.906370Z",
+  "since": "2026-07-12T00:00:00+02:00",
+  "until": "2026-07-19T23:59:59+02:00",
+  "week": "2026-W29",
+  "repos": [
+    {
+      "repo": "rsporny/portfolio-pipeline",
+      "commits": [
+        {
+          "sha": "3bd6cf35966801e19b7e277b6c488cfd044cfcaf",
+          "date": "2026-07-14T18:35:56Z",
+          "message": "fix: tolerate tagged-object highlights from Stage B\n\nThe model sometimes emits highlights as {text, tag} objects instead of\nstrings, failing Content validation after three model calls. Coerce them\nto '<text> — <tag>' via a before-validator; plain strings pass through.\n\nAssisted-by: claude-opus-4-8",
+          "url": "https://github.com/rsporny/portfolio-pipeline/commit/3bd6cf35966801e19b7e277b6c488cfd044cfcaf",
+          "files": [
+            {
+              "filename": "src/pipeline/models.py",
+              "additions": 26,
+              "deletions": 1,
+              "changes": 27
+            },
+            {
+              "filename": "tests/test_models.py",
+              "additions": 36,
+              "deletions": 1,
+              "changes": 37
+            }
+          ]
+        },
+        {
+          "sha": "de86980ecebc30729f76ecf6dbe9a3ba6bf2a81c",
+          "date": "2026-07-14T18:00:28Z",
+          "message": "feat: selective deep context — review comments + linked issues (v0.3)\n\nCollector enriches owner-PRs of repos with an active thread with review\ndiscussion and linked issues; third-party names are anonymized before raw/\nis written (finally implements redact_third_party_names). schema_version 3,\nback-compatible. Stage A/indexer/Stage B told deep context is understanding\nonly, never quoted.\n\nAssisted-by: claude-opus-4-8",
+          "url": "https://github.com/rsporny/portfolio-pipeline/commit/de86980ecebc30729f76ecf6dbe9a3ba6bf2a81c",
+          "files": [
+            {
+              "filename": "CLAUDE.md",
+              "additions": 1,
+              "deletions": 1,
+              "changes": 2
+            },
+            {
+              "filename": "README.md",
+              "additions": 13,
+              "deletions": 2,
+              "changes": 15
+            },
+            {
+              "filename": "SPEC.md",
+              "additions": 46,
+              "deletions": 6,
+              "changes": 52
+            },
+            {
+              "filename": "config.yaml",
+              "additions": 1,
+              "deletions": 0,
+              "changes": 1
+            },
+            {
+              "filename": "pyproject.toml",
+              "additions": 1,
+              "deletions": 1,
+              "changes": 2
+            },
+            {
+              "filename": "src/pipeline/collect.py",
+              "additions": 135,
+              "deletions": 4,
+              "changes": 139
+            },
+            {
+              "filename": "src/pipeline/config.py",
+              "additions": 5,
+              "deletions": 0,
+              "changes": 5
+            },
+            {
+              "filename": "src/pipeline/github.py",
+              "additions": 56,
+              "deletions": 0,
+              "changes": 56
+            },
+            {
+              "filename": "src/pipeline/models.py",
+              "additions": 48,
+              "deletions": 1,
+              "changes": 49
+            },
+            {
+              "filename": "src/pipeline/prompts.py",
+              "additions": 16,
+              "deletions": 1,
+              "changes": 17
+            },
+            {
+              "filename": "src/pipeline/redact.py",
+              "additions": 23,
+              "deletions": 0,
+              "changes": 23
+            },
+            {
+              "filename": "tests/fixtures/issue_comments.json",
+              "additions": 12,
+              "deletions": 0,
+              "changes": 12
+            },
+            {
+              "filename": "tests/fixtures/pr_review_comments.json",
+              "additions": 14,
+              "deletions": 0,
+              "changes": 14
+            },
+            {
+              "filename": "tests/fixtures/pr_reviews.json",
+              "additions": 14,
+              "deletions": 0,
+              "changes": 14
+            },
+            {
+              "filename": "tests/fixtures/pr_timeline.json",
+              "additions": 18,
+              "deletions": 0,
+              "changes": 18
+            },
+            {
+              "filename": "tests/test_collect.py",
+              "additions": 113,
+              "deletions": 2,
+              "changes": 115
+            },
+            {
+              "filename": "tests/test_github.py",
+              "additions": 74,
+              "deletions": 2,
+              "changes": 76
+            },
+            {
+              "filename": "tests/test_models.py",
+              "additions": 70,
+              "deletions": 0,
+              "changes": 70
+            },
+            {
+              "filename": "tests/test_redact.py",
+              "additions": 45,
+              "deletions": 1,
+              "changes": 46
+            },
+            {
+              "filename": "tests/test_transform.py",
+              "additions": 79,
+              "deletions": 1,
+              "changes": 80
+            },
+            {
+              "filename": "uv.lock",
+              "additions": 1,
+              "deletions": 1,
+              "changes": 2
+            }
+          ]
+        },
+        {
+          "sha": "4e48bc18f277afb11362d9e081a3196749fdb052",
+          "date": "2026-07-13T20:18:00Z",
+          "message": "docs: release v0.2.[collaborator] — version bump, SPEC status, fork CI setup\n\nMark v0.2 complete: bump version to [collaborator].2.[collaborator] and add a status note to SPEC\nrecording the milestone-5 CI behaviour (scheduled auto-pick, workflow_dispatch\nfocus override, bot commits of raw/ + memory/ back to main). Add a README\nfork-setup section documenting the three Actions secrets and their scopes, the\nwebsite-repo swap, and the bot-commit permission a fork needs.\n\nAssisted-by: claude-opus-4-8",
+          "url": "https://github.com/rsporny/portfolio-pipeline/commit/4e48bc18f277afb11362d9e081a3196749fdb052",
+          "files": [
+            {
+              "filename": "README.md",
+              "additions": 30,
+              "deletions": 0,
+              "changes": 30
+            },
+            {
+              "filename": "SPEC.md",
+              "additions": 8,
+              "deletions": 0,
+              "changes": 8
+            },
+            {
+              "filename": "pyproject.toml",
+              "additions": 1,
+              "deletions": 1,
+              "changes": 2
+            },
+            {
+              "filename": "uv.lock",
+              "additions": 1,
+              "deletions": 1,
+              "changes": 2
+            }
+          ]
+        },
+        {
+          "sha": "1bdb4032ad016737aab652b3a3f46944848b64eb",
+          "date": "2026-07-13T20:12:36Z",
+          "message": "feat: CI bot commits raw+memory, workflow_dispatch focus input (v0.2 M5)\n\nThe weekly workflow now commits raw/ activity snapshots and memory/ thread\nupdates back to main as labeled bot commits, so continuity and the audit\ntrail outlive the <=90-day workflow artifacts. A workflow_dispatch focus\ninput can lead the entry on specific thread(s); the scheduled run auto-picks.\n\nAssisted-by: claude-opus-4-8",
+          "url": "https://github.com/rsporny/portfolio-pipeline/commit/1bdb4032ad016737aab652b3a3f46944848b64eb",
+          "files": [
+            {
+              "filename": ".github/workflows/weekly.yml",
+              "additions": 29,
+              "deletions": 4,
+              "changes": 33
+            },
+            {
+              "filename": "README.md",
+              "additions": 27,
+              "deletions": 1,
+              "changes": 28
+            },
+            {
+              "filename": "tests/test_cli.py",
+              "additions": 9,
+              "deletions": 0,
+              "changes": 9
+            }
+          ]
+        },
+        {
+          "sha": "c07fcbe050ccec499ea62c8b62d6bf3e1981d59d",
+          "date": "2026-07-13T19:50:11Z",
+          "message": "style: fix fmt",
+          "url": "https://github.com/rsporny/portfolio-pipeline/commit/c07fcbe050ccec499ea62c8b62d6bf3e1981d59d",
+          "files": [
+            {
+              "filename": "src/pipeline/memory.py",
+              "additions": 1,
+              "deletions": 0,
+              "changes": 1
+            }
+          ]
+        },
+        {
+          "sha": "d2e5a19637914233b9c77450e25e99ab3c3dcf2f",
+          "date": "2026-07-13T19:24:10Z",
+          "message": "chore: 2026-W28 activity",
+          "url": "https://github.com/rsporny/portfolio-pipeline/commit/d2e5a19637914233b9c77450e25e99ab3c3dcf2f",
+          "files": [
+            {
+              "filename": "memory/midnightntwrk/midnight-node/threads.yaml",
+              "additions": 68,
+              "deletions": 69,
+              "changes": 137
+            },
+            {
+              "filename": "memory/rsporny/portfolio-pipeline/threads.yaml",
+              "additions": 64,
+              "deletions": 50,
+              "changes": 114
+            },
+            {
+              "filename": "raw/2026-W28/activity.json",
+              "additions": 1096,
+              "deletions": 0,
+              "changes": 1096
+            }
+          ]
+        },
+        {
+          "sha": "e218a666311c53c1b69d92220f36fbd8f75b3462",
+          "date": "2026-07-13T19:07:35Z",
+          "message": "feat: ordered multi-topic focus + more readable devlogs\n\nRefine Stage B from the first multi-focus run (picked 4,3,1 but the entry led\nwith 1 and buried 4):\n\n- Focus order now follows the picked order, first pick = primary. Fixes both\n  the candidate-order rebuild in transform_week and the priority-less join in\n  _render_focus.\n- With focus, the devlog covers ONLY the picked threads, one section each\n  (primary first and deepest), each ending with its OWN proof-of-work link;\n  topics may stand alone instead of being forced into one narrative.\n- Title/opening center on the primary topic only.\n- Readability guardrail: plain language, define terms of art, cut unexplained\n  slogans (e.g. \"model proposes, code disposes\"). DEVLOG cap 400-750 words.\n\n125 tests, zero network.\n\nAssisted-by: claude-opus-4-8",
+          "url": "https://github.com/rsporny/portfolio-pipeline/commit/e218a666311c53c1b69d92220f36fbd8f75b3462",
+          "files": [
+            {
+              "filename": "src/pipeline/prompts.py",
+              "additions": 32,
+              "deletions": 20,
+              "changes": 52
+            },
+            {
+              "filename": "src/pipeline/transform.py",
+              "additions": 17,
+              "deletions": 7,
+              "changes": 24
+            },
+            {
+              "filename": "tests/test_transform.py",
+              "additions": 62,
+              "deletions": 4,
+              "changes": 66
+            }
+          ]
+        },
+        {
+          "sha": "e723d3c6bcaf2d69188ac00820cbc81cc1ec7c39",
+          "date": "2026-07-13T18:15:18Z",
+          "message": "feat: week-relative framing, picked focus, tolerant JSON parsing\n\nThree fixes from hardening the W28 transform end-to-end:\n\n1. Temporal framing. A thread begun the same week as the entry was rendered\n   with continuity language (\"started back in W28\"), reading the current\n   week as past. _render_thread_context is now week-relative: same-week\n   threads are introduced in the present, only earlier ones get \"started N\n   weeks ago\". Adds memory.weeks_between.\n\n2. Focus control. Stage B chose the lead topic itself, so reruns drifted\n   across topics. After the indexer, the caller picks which of this week's\n   active threads the entry leads on: interactive prompt on a TTY, --focus\n   <thread-id> (exact, validated) non-interactively, auto when neither\n   applies so CI never blocks. Focus leads title/opening/social; the rest of\n   the week is still covered briefly.\n\n3. Tolerant JSON parsing. Models sometimes append a note after a valid\n   object despite the JSON-only instruction; strict json.loads discarded the\n   whole response as 'Extra data'. parse_json_response now salvages the first\n   JSON object across all stages; responses with no object still raise.\n\n123 tests, zero network.\n\nAssisted-by: claude-opus-4-8",
+          "url": "https://github.com/rsporny/portfolio-pipeline/commit/e723d3c6bcaf2d69188ac00820cbc81cc1ec7c39",
+          "files": [
+            {
+              "filename": "CLAUDE.md",
+              "additions": 1,
+              "deletions": 1,
+              "changes": 2
+            },
+            {
+              "filename": "README.md",
+              "additions": 2,
+              "deletions": 1,
+              "changes": 3
+            },
+            {
+              "filename": "SPEC.md",
+              "additions": 3,
+              "deletions": 1,
+              "changes": 4
+            },
+            {
+              "filename": "src/pipeline/cli.py",
+              "additions": 68,
+              "deletions": 5,
+              "changes": 73
+            },
+            {
+              "filename": "src/pipeline/llm.py",
+              "additions": 25,
+              "deletions": 1,
+              "changes": 26
+            },
+            {
+              "filename": "src/pipeline/memory.py",
+              "additions": 13,
+              "deletions": 3,
+              "changes": 16
+            },
+            {
+              "filename": "src/pipeline/prompts.py",
+              "additions": 18,
+              "deletions": 12,
+              "changes": 30
+            },
+            {
+              "filename": "src/pipeline/transform.py",
+              "additions": 59,
+              "deletions": 4,
+              "changes": 63
+            },
+            {
+              "filename": "tests/test_cli.py",
+              "additions": 71,
+              "deletions": 0,
+              "changes": 71
+            },
+            {
+              "filename": "tests/test_memory.py",
+              "additions": 8,
+              "deletions": 0,
+              "changes": 8
+            },
+            {
+              "filename": "tests/test_transform.py",
+              "additions": 124,
+              "deletions": 0,
+              "changes": 124
+            }
+          ]
+        },
+        {
+          "sha": "36f2ecb20f4988710602756a3cd87a03286bc7af",
+          "date": "2026-07-13T13:25:44Z",
+          "message": "fix: indexer proposal contract owns only editorial fields\n\nThe indexer failed for any repo whose proposed threads carried code-owned\nfields: the model filled made_week/key_decisions.week with null then a stray\nbool, a new assumption's status with an invented 'proposed', and review_by\nwith dates a year in the past — each failing the all-or-nothing apply_mutations\nand silently dropping the whole repo's memory back to empty (the W28\nmidnight-node symptom).\n\nNarrow the proposal models to only genuinely-editorial fields; code disposes\nthe rest (hard constraint 6):\n- ProposedThread/ProposedAssumption/ProposedKeyDecision drop week stamps; code\n  stamps the run week.\n- New assumptions are born open; status changes only via assumption_updates.\n- review_by becomes review_after_weeks (a horizon); add_weeks() computes the\n  absolute ISO week, so a past-dated review is structurally impossible.\nStray fields are now ignored, not fatal.\n\nAlso strip the 6 past-dated review_by values already written to\nmidnight-node's registry. 105 tests, zero network.\n\nAssisted-by: claude-opus-4-8",
+          "url": "https://github.com/rsporny/portfolio-pipeline/commit/36f2ecb20f4988710602756a3cd87a03286bc7af",
+          "files": [
+            {
+              "filename": "memory/midnightntwrk/midnight-node/threads.yaml",
+              "additions": 102,
+              "deletions": 0,
+              "changes": 102
+            },
+            {
+              "filename": "memory/rsporny/portfolio-pipeline/threads.yaml",
+              "additions": 69,
+              "deletions": 0,
+              "changes": 69
+            },
+            {
+              "filename": "src/pipeline/memory.py",
+              "additions": 73,
+              "deletions": 9,
+              "changes": 82
+            },
+            {
+              "filename": "src/pipeline/prompts.py",
+              "additions": 12,
+              "deletions": 8,
+              "changes": 20
+            },
+            {
+              "filename": "tests/test_memory.py",
+              "additions": 91,
+              "deletions": 11,
+              "changes": 102
+            }
+          ]
+        }
+      ],
+      "pull_requests": [
+        {
+          "number": 1,
+          "title": "feat: v0.3 selective deep context (review comments + linked issues)",
+          "description": "## v0.3 — selective deep context\r\n\r\nWeekly entries were written from *shallow* signal (commit messages, PR titles/bodies, closed-issue titles). The \"why\" of a change usually lives in the **review discussion** and the **issue graph**, which the pipeline never saw. v0.3 fetches that context — but only where it pays off.\r\n\r\n### What it does\r\nFor a PR in a repo that has an **active thread** in memory (`status: ongoing`), the collector now enriches it with:\r\n- **Review discussion** — review summaries (with a body), inline review comments, and conversation comments, each tagged with a structural `author_role` (`owner`/`other`) and **no names**.\r\n- **Linked issues** — issues the PR closes (body closing-keywords → `relation: closes`) or references (timeline cross-references → `relation: references`).\r\n\r\nGating is **repo-level at collect time**: a brand-new PR's thread membership only exists after Stage A, so instead of a costly two-pass transform, deep context is fetched for the owner-PRs of any repo with an ongoing arc — and skipped entirely for repos without one (and always, before any thread exists). Deep context reaches the model structurally (it rides on the PRs in the activity JSON), guarded by \"understanding only, never quote\" instructions across Stage A / indexer / Stage B.\r\n\r\n### Privacy — third-party name redaction (finally implemented)\r\n`redact_third_party_names` was specified in SPEC Module 3 but never implemented; it didn't matter while all activity was owner-authored. Deep context brings in other people's words, so it's now real: every non-owner login / display name / `[collaborator]` / `Co-authored-by` is masked to `[collaborator]` **in the collector, before `raw/` is written** — the public snapshot and git history never carry a collaborator's name. Phrase redaction still runs before every model call over the already-anonymized activity.\r\n\r\n### Schema\r\n`activity.json` is now `schema_version: 3` (anonymized deep context on PRs). A `schema_version: 2` file still parses — the new fields default to empty.\r\n\r\n### Also included\r\n- **`fix`: tolerate tagged-object highlights from Stage B** — the model sometimes returns `highlights` as `{\"text\", \"tag\"}` objects instead of strings, which failed `Content` validation *after* three paid model calls. A `before`-validator now flattens them to `\"<text> — <tag>\"`; plain strings pass through. Verified against the real failing response.\r\n\r\n### Docs\r\nSPEC (v0.3 milestones + status, collector/redaction sections, config keys), README, CLAUDE.md updated; version → [collaborator].3.[collaborator].\r\n\r\n### Out of scope (deferred)\r\nSub-issue parent/child graph; precise per-PR two-pass gating; v0.4+ roadmap items.\r\n\r\n### Tests\r\n+151 passing, ruff lint + format clean. New coverage: name redaction, repo-gated deep fetch, anonymization, schema-2 back-compat, client parsing (fixtures), highlight coercion. Zero real network calls.",
+          "labels": [],
+          "state": "closed",
+          "url": "https://github.com/rsporny/portfolio-pipeline/pull/1",
+          "created_at": "2026-07-14T18:36:57Z",
+          "merged_at": "2026-07-14T18:40:01Z",
+          "review_comments": [],
+          "linked_issues": []
+        }
+      ],
+      "issues": []
+    },
+    {
+      "repo": "midnightntwrk/midnight-node",
+      "commits": [
+        {
+          "sha": "10ed621659e00f097528cfd3f7c34dc3cadff708",
+          "date": "2026-07-17T08:48:13Z",
+          "message": "fix(local-env): bump midnight-reserve-contracts to pin blueprint version (#1894)\n\nPicks up the [collaborator]/blueprint[collaborator].8.2 pin so contract-compiler no longer fails on the TypedScript import mismatch during local-env startup.\n\nRef: #1893\n\nAssisted-by: Claude:claude-opus-4-8\n\nSigned-off-by: Radosław Sporny <404[collaborator].dev>",
+          "url": "https://github.com/midnightntwrk/midnight-node/commit/10ed621659e00f097528cfd3f7c34dc3cadff708",
+          "files": [
+            {
+              "filename": "midnight-reserve-contracts",
+              "additions": 1,
+              "deletions": 1,
+              "changes": 2
+            }
+          ]
+        },
+        {
+          "sha": "0cfb8631d317ad68717f2cd101ce7b1fd1971814",
+          "date": "2026-07-15T12:54:14Z",
+          "message": "docs: add C-to-M bridge Happy Path walkthrough for Stagenet (#1857)\n\n* docs: add C-to-M bridge Happy Path walkthrough for Stagenet\n\nStep-by-step guide for exercising the Cardano-to-Midnight bridge end to\nend on Stagenet: derive a recipient address, lock cNIGHT at the ICS\nvalidator, pre-approve the Cardano tx hash via governance, wait for\nobservation, and claim the bridged mNIGHT. Cross-linked from the concept\ndoc; notes the cardano-cli script and demo dApp as alternative ways to\nproduce the Cardano-side lock.\n\nAssisted-by: Claude:claude-opus-4-8\nSigned-off-by: Radosław Sporny <404[collaborator].dev>\n\n* docs: revise C2M bridge walkthrough and split out bridge-enabling guide\n\nAddress [collaborator] review on PR #1857 and restructure the C-to-M bridge docs.\n\nWalkthrough (docs/c-to-m-bridge-walkthrough.md):\n- Fix the flow ordering to prepare -> pre-approve -> sign & submit ->\n  observe -> claim, matching the e2e source-of-truth test. The old doc\n  used the toolkit's atomic bridge-transfer (submit before revealing the\n  hash), which made 'pre-approval' happen post-submission.\n- Make cardano-cli the primary lock path (it exposes the tx hash before\n  submission); clarify the demo dApp separates signing from submission\n  and so supports the same ordering; keep bridge-transfer as the one-shot\n  alternative that races the observation window.\n- Redraw the 'happy path at a glance' as a swimlane: Cardano steps left,\n  Midnight steps right.\n- Capitalize the Cardano Preview network name; add cNIGHT and ADA testnet\n  faucet links.\n- Correct the false 'bridge is live from block [collaborator]' claim: Stagenet ships\n  the bridge disabled at genesis by design.\n\nNew docs/c-to-m-bridge-enabling.md:\n- Standalone guide to check whether the bridge is on (bridge.dataCheckpoint)\n  and how to enable it via governance (bridge.setMainChainScripts). The\n  walkthrough keeps a short precondition pointer; the concept doc links both.\n\nAssisted-by: Claude:claude-opus-4-8\nSigned-off-by: Radosław Sporny <404[collaborator].dev>\n\n* docs: C2M bridge walkthrough toolkit version info\n\nSigned-off-by: Radosław Sporny <404[collaborator].dev>\n\n* docs: link C2M bridge walkthrough and enabling guides in README\n\nThe docs::check_doc_files_are_linked_in_readme test requires every\ntop-level docs/*.md to be referenced in README.md. Add links for the\nwalkthrough and the new enabling guide, fixing the failing CI test.\n\nAssisted-by: Claude:claude-opus-4-8\nSigned-off-by: Radosław Sporny <404[collaborator].dev>\n\n---------\n\nSigned-off-by: Radosław Sporny <404[collaborator].dev>",
+          "url": "https://github.com/midnightntwrk/midnight-node/commit/0cfb8631d317ad68717f2cd101ce7b1fd1971814",
+          "files": [
+            {
+              "filename": "README.md",
+              "additions": 2,
+              "deletions": 0,
+              "changes": 2
+            },
+            {
+              "filename": "docs/c-to-m-bridge-enabling.md",
+              "additions": 104,
+              "deletions": 0,
+              "changes": 104
+            },
+            {
+              "filename": "docs/c-to-m-bridge-walkthrough.md",
+              "additions": 464,
+              "deletions": 0,
+              "changes": 464
+            },
+            {
+              "filename": "docs/c-to-m-bridge.md",
+              "additions": 6,
+              "deletions": 0,
+              "changes": 6
+            }
+          ]
+        },
+        {
+          "sha": "797e76c3cae5223d1795d701ad60d9e4dcc99513",
+          "date": "2026-07-14T14:18:13Z",
+          "message": "fix(local-env): run natively on arm64 (#1874)\n\n* fix(local-env): run natively on arm64\n\nTwo pieces were still amd64-only and broke native arm64:\n\n- The vendored busybox was an amd64 binary, mounted into the Cardano\n  containers to provide sed/awk/grep/wget. On arm64 hosts, where those\n  containers now run native, it failed with \"Exec format error\" and\n  crashed cardano-node-1 at entrypoint.sh:127. Vendor arch-specific\n  binaries (busybox.amd64 / busybox.arm64, both static BusyBox 1.35.[collaborator]),\n  mount ./configurations/busybox.${ARCH}, export ARCH from .envrc, and\n  derive it from ARCHITECTURE in the runner when unset (e.g. CI).\n\n- db-sync was pinned to platform: linux/amd64 and ran under emulation.\n  Point DBSYNC_IMAGE at the multi-arch cardano-db-sync branch build\n  (feature_aarch64-release-bin) and set platform: ${ARCHITECTURE}, so\n  db-sync is selected like every other service and runs native on both\n  arches. Both arches move to db-sync 13.7.2.1; the stable release\n  (13.7.[collaborator].4) is amd64-only. Temporary, mutable tag until a multi-arch\n  release ships.\n\nIssue: https://github.com/midnightntwrk/midnight-node/issues/1873\n\nAssisted-by: Claude:claude-opus-4-8\nSigned-off-by: Radosław Sporny <404[collaborator].dev>\n\n* refactor(local-env): provide busybox via multi-arch init service\n\nReplace the two vendored per-arch busybox binaries (and the ARCH plumbing\nthat selected between them) with a busybox-init service that copies an\narch-matching static busybox from the multi-arch busybox image into the\nshared volume at startup. Docker resolves the architecture, so:\n\n- no per-arch binaries are committed (busybox.amd64 / busybox.arm64 removed)\n- the ARCH compose var, its .envrc export, and the requiredImageVars /\n  ensureArch handling are gone\n\ncardano-node-1 depends on busybox-init; every other consumer already waits\non cardano-node-1, so /shared/busybox is populated before use. The\nentrypoints that use it (cardano, mint-cnight-supply) now call\n/shared/busybox; the unused mounts on kupo/ogmios/db-sync are dropped.\n\nIssue: https://github.com/midnightntwrk/midnight-node/issues/1873\n\nAssisted-by: Claude:claude-opus-4-8\nSigned-off-by: Radosław Sporny <404[collaborator].dev>\n\n---------\n\nSigned-off-by: Radosław Sporny <404[collaborator].dev>",
+          "url": "https://github.com/midnightntwrk/midnight-node/commit/797e76c3cae5223d1795d701ad60d9e4dcc99513",
+          "files": [
+            {
+              "filename": "changes/changed/local-env-arm64-native.md",
+              "additions": 15,
+              "deletions": 0,
+              "changes": 15
+            },
+            {
+              "filename": "local-environment/.env.default",
+              "additions": 3,
+              "deletions": 1,
+              "changes": 4
+            },
+            {
+              "filename": "local-environment/src/networks/local-env/configurations/busybox",
+              "additions": 0,
+              "deletions": 0,
+              "changes": 0
+            },
+            {
+              "filename": "local-environment/src/networks/local-env/configurations/cardano/entrypoint.sh",
+              "additions": 16,
+              "deletions": 17,
+              "changes": 33
+            },
+            {
+              "filename": "local-environment/src/networks/local-env/configurations/mint-cnight-supply/mint-cnight-supply.sh",
+              "additions": 5,
+              "deletions": 5,
+              "changes": 10
+            },
+            {
+              "filename": "local-environment/src/networks/local-env/docker-compose.yml",
+              "additions": 22,
+              "deletions": 10,
+              "changes": 32
+            }
+          ]
+        },
+        {
+          "sha": "2919856292279df37b80c9c49aea28edbc5a5e64",
+          "date": "2026-07-14T07:49:27Z",
+          "message": "fix(envrc): rename git hook friendly-name to avoid event collision (#1866)\n\nThe [hook] config syntax (introduced in Git 2.54) used friendly-name\n'commit-msg', which equals a known event name; Git 2.55.[collaborator] rejects it with\n\"collides with a known event name\", breaking lazygit and any \\`git hook\nlist\\`. Rename it to 'dco' (the hook enforces the DCO Signed-off-by line).\n\nAssisted-by: Claude:claude-opus-4-8\n\nSigned-off-by: Radosław Sporny <404[collaborator].dev>\nCo-authored-by: [collaborator] <giles.cope[collaborator].io>",
+          "url": "https://github.com/midnightntwrk/midnight-node/commit/2919856292279df37b80c9c49aea28edbc5a5e64",
+          "files": [
+            {
+              "filename": ".envrc",
+              "additions": 2,
+              "deletions": 2,
+              "changes": 4
+            }
+          ]
+        }
+      ],
+      "pull_requests": [
+        {
+          "number": 1894,
+          "title": "fix(local-env): bump midnight-reserve-contracts to pin blueprint version",
+          "description": "# Overview\r\n\r\nBumps the `midnight-reserve-contracts` submodule to pick up the `[collaborator]/blueprint[collaborator].8.2` pin.\r\n\r\nBefore this, `local-environment`'s `contract-compiler` failed during the deploy step: the blueprint generator ran with a floating `[collaborator]/blueprint[collaborator]` ([collaborator].9.[collaborator]), which emits `import { TypedScript } from \"[collaborator]/tx\"`, but the contracts repo pins `[collaborator]/tx[collaborator].14.1` (which predates that export). Result:\r\n\r\n```\r\nSyntaxError: Export named 'TypedScript' not found in module '.../[collaborator]/tx/dist/index.mjs'\r\n```\r\n\r\nThis blocked the whole local-env stack (`midnight-setup` and all `midnight-node-*` services `depend_on` `contract-compiler`). Not architecture-specific.\r\n\r\nThe actual fix lives in the submodule: midnightntwrk/midnight-reserve-contracts#99.\r\n\r\n## 🗹 TODO before merging\r\n\r\n- [x] Ready\r\n\r\n## 📌 Submission Checklist\r\n\r\n- [x] All commits are signed off (`git commit -s`) for the DCO\r\n- [x] Changes are backward-compatible (or flagged if breaking)\r\n- [x] Pull request description explains why the change is needed\r\n- [x] Self-reviewed the diff\r\n- [x] I have included a change file, or skipped for this reason: change only affects local-environment tooling (not node/toolkit/runtime)\r\n- [ ] If the changes introduce a new feature, I have bumped the node minor version\r\n- [ ] Update documentation (if relevant)\r\n- [ ] Updated AGENTS.md if build commands, architecture, or workflows changed\r\n- [x] No new todos introduced\r\n\r\n## 🧪 Testing Evidence\r\n\r\nRan the `contract-compiler` service in local-env with the pinned generator against a fresh container. Full flow succeeds (exit [collaborator]): aiken compile → blueprint generation → `deploy` → `sign-and-submit` → data export. The generated `contract_blueprint_local.ts` imports `cborToScript` from `[collaborator]/uplc` (no `TypedScript`), and contract data lands in `/runtime-values` for `midnight-setup`.\r\n\r\n- [ ] Additional tests are provided (if possible)\r\n\r\n## 🔱 Fork Strategy\r\n\r\n- [ ] Node Runtime Update\r\n- [ ] Node Client Update\r\n- [ ] Other:\r\n- [x] N/A\r\n\r\n## Links\r\n\r\nCloses #1893\r\nDepends on midnightntwrk/midnight-reserve-contracts#99\r\n\r\nAssisted-by: Claude:claude-opus-4-8",
+          "labels": [
+            "skip-changes-check-all",
+            "component:contracts",
+            "bot:ai-assisted"
+          ],
+          "state": "closed",
+          "url": "https://github.com/midnightntwrk/midnight-node/pull/1894",
+          "created_at": "2026-07-17T08:08:23Z",
+          "merged_at": "2026-07-17T08:49:19Z",
+          "review_comments": [
+            {
+              "body": "Codex usage limits have been reached for code reviews. Please check with the admins of this repo to increase the limits by adding credits.\nCredits must be used to enable repository wide code reviews.",
+              "author_role": "other",
+              "kind": "conversation"
+            }
+          ],
+          "linked_issues": [
+            {
+              "number": 1893,
+              "title": "local-env: contract-compiler fails — [collaborator]/blueprint[collaborator] drifts from pinned tx (TypedScript import)",
+              "url": "https://github.com/midnightntwrk/midnight-node/issues/1893",
+              "state": "closed",
+              "relation": "closes"
+            }
+          ]
+        },
+        {
+          "number": 1874,
+          "title": "fix(local-env): run natively on arm64",
+          "description": "# Overview\n\nMakes `local-environment` run **fully native on arm64**. Two pieces were still amd64-only:\n\n1. **Vendored busybox was an x86-64 binary.** It's mounted into the Cardano containers (`cardano-node-1`, `kupo`, `ogmios`, `db-sync`, `mint-cnight-supply`) to provide `sed`/`awk`/`grep`/`wget`, which the Cardano image lacks. While those containers ran under amd64/emulation it worked; native arm64 exposed the mismatch and crashed `cardano-node-1` at `entrypoint.sh:127` with `cannot execute binary file: Exec format error`.\n2. **`db-sync` was pinned to `platform: linux/amd64`** and ran under emulation.\n\n## Changes\n\n- Vendor arch-specific busybox binaries (`busybox.amd64` / `busybox.arm64`, both static BusyBox 1.35.[collaborator]); mount `./configurations/busybox.${ARCH}:/busybox`. `busybox.amd64` is the previous binary, byte-identical (`git mv`). `ARCH` is exported from `.envrc` and added to `requiredImageVars`.\n- Point `DBSYNC_IMAGE` at the multi-arch `cardano-db-sync` tag and set `platform: ${ARCHITECTURE}`, so db-sync is selected like every other service and runs native on both arches (no arch-conditional logic).\n\n## ⚠️ Temporary db-sync tag\n\n`cardano-db-sync` has no multi-arch **release** — the stable `13.7.[collaborator].4` is amd64-only. This PR uses the multi-arch **branch build** `feature_aarch64-release-bin` (db-sync **13.7.2.1**) as a stopgap. Implications:\n\n- **Both arches move to `13.7.2.1`** (the branch build). amd64 leaves the stable `13.7.[collaborator].4` release; for local dev tooling this keeps both arches on the same version, which is desirable.\n- **The tag is mutable** — a branch build can be overwritten upstream, so it is not fully reproducible.\n\nWhen cardano-db-sync ships a multi-arch release, just bump `DBSYNC_IMAGE` in `.env.default` to it — no other change needed.\n\n## 🗹 TODO before merging\n\n- [x] Ready\n\n## 📌 Submission Checklist\n\n- [x] All commits are signed off (`git commit -s`) for the DCO\n- [x] Changes are backward-compatible (or flagged if breaking)\n- [x] Pull request description explains why the change is needed\n- [x] Self-reviewed the diff\n- [x] I have included a change file, or skipped for this reason:\n- [ ] If the changes introduce a new feature, I have bumped the node minor version\n- [ ] Update documentation (if relevant)\n- [ ] Updated AGENTS.md if build commands, architecture, or workflows changed\n- [x] No new todos introduced\n\n## 🧪 Testing Evidence\n\n- `docker compose config` resolves `db-sync` to the multi-arch tag with `platform: linux/arm64` on arm64 and `linux/amd64` on amd64, and the busybox mount to `busybox.arm64` / `busybox.amd64` respectively (5 mounts each).\n- Ran the vendored arm64 busybox **inside the real `cardano-node:11.[collaborator].1` arm64 image**, replaying the exact failing `entrypoint.sh:127` `sed` command — executes natively, `sed`/`awk`/`grep` all work, no `Exec format error`.\n- Confirmed on an arm64 host: the full stack comes up and `cardano-node-1` no longer crashes.\n\n- [ ] Additional tests are provided (if possible)\n\n## 🔱 Fork Strategy\n\n- [x] N/A\n\n## Links\n\nCloses #1873",
+          "labels": [
+            "skip-changes-check-all",
+            "ci:arm64",
+            "ai-assisted"
+          ],
+          "state": "closed",
+          "url": "https://github.com/midnightntwrk/midnight-node/pull/1874",
+          "created_at": "2026-07-14T11:35:22Z",
+          "merged_at": "2026-07-14T14:19:24Z",
+          "review_comments": [
+            {
+              "body": "Codex usage limits have been reached for code reviews. Please check with the admins of this repo to increase the limits by adding credits.\nCredits must be used to enable repository wide code reviews.",
+              "author_role": "other",
+              "kind": "conversation"
+            },
+            {
+              "body": "<a target='_blank' href='https://app.datadoghq.eu/ci/pipeline-executions?query=ci_level%3Ajob+%40ci.status%3Aerror+%40git.commit.sha%3Ab439465cb6078a95ddf5d3626223783d3f75b803&referrer=pr-comment&start=1784028306000'><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.datadoghq.com/static/images/pr_comments/software_delivery/badges_header/pipelines-warning.svg\"/><img src=\"https://static.datadoghq.com/static/images/pr_comments/software_delivery/badges_header/pipelines-warning-light.svg\" alt=\"Pipelines\" align=\"center\" /></picture></a>\n\n## ⚠️ Warnings\n\n🚦 **1 Pipeline job failed**\n\n<blockquote>\n<div>\n\n<code> CI &#43; E2E | Local Environment Tests </code> &nbsp;&nbsp;<a href=\"https://app.datadoghq.eu/ci/pipeline-executions?query=ci_level%3Ajob&#43;ci.job_correlation_id%3A3f76dfc643147ace&amp;referrer=pr-comment&amp;start=1784028306000\" title=\"View in Datadog\"><img src=\"https://static.datadoghq.com/static/images/pr_comments/software_delivery/datadog_icon.svg\" alt=\"View in Datadog\" align=\"center\" /></a> &nbsp; <a href=\"https://github.com/midnightntwrk/midnight-node/actions/runs/29330596762/job/87080159490\" title=\"View in GitHub Actions\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.datadoghq.com/static/images/pr_comments/software_delivery/logos/github-logo-dark.svg\"/><img src=\"https://static.datadoghq.com/static/images/pr_comments/software_delivery/logos/github-logo-light.svg\" alt=\"GitHub Actions\" align=\"center\" /></picture></a>\n\n</div>\n</blockquote>\n\nUseful? React with 👍 / 👎\n\n<sub>\nThis comment will be updated automatically if new data arrives. <br />\n🔗 Commit SHA: b439465 | <a href=\"https://docs.datadoghq.com/integrations/guide/source-code-integration/#pr-comments\">Docs</a> | Give us <a href=\"https://forms.gle/ys6MDmdQEeC5pkzWA\">feedback</a>!\n</sub>",
+              "author_role": "other",
+              "kind": "conversation"
+            }
+          ],
+          "linked_issues": [
+            {
+              "number": 1873,
+              "title": "local-env: run natively on arm64 (arch-specific busybox + db-sync image)",
+              "url": "https://github.com/midnightntwrk/midnight-node/issues/1873",
+              "state": "closed",
+              "relation": "closes"
+            }
+          ]
+        },
+        {
+          "number": 1866,
+          "title": "fix(envrc): rename git hook friendly-name to avoid event collision",
+          "description": "# Overview\n\n`.envrc` configured the `commit-msg` hook using the `[hook \"<friendly-name>\"]` config syntax (introduced in Git 2.54), but used `commit-msg` as the friendly-name — identical to the known event name. Git 2.55.[collaborator] rejects this (verified locally) with:\n\n```\nfatal: hook friendly-name 'commit-msg' collides with a known event name; please choose a different friendly-name\n```\n\nBecause `direnv` re-sources `.envrc` on every `cd` into the repo, the broken entry was regenerated constantly, breaking `git hook list` and clients that call it (e.g. lazygit).\n\nThis renames the friendly-name to `dco`, which accurately describes the hook (`.githooks/commit-msg` enforces the DCO `Signed-off-by:` line) and no longer collides with an event name.\n\n## 🗹 TODO before merging\n\n- [x] Ready\n\n## 📌 Submission Checklist\n\n- [x] All commits are signed off (`git commit -s`) for the DCO\n- [x] Changes are backward-compatible (or flagged if breaking)\n- [x] Pull request description explains why the change is needed\n- [x] Self-reviewed the diff\n- [x] I have included a change file, or skipped for this reason: dev-env/tooling only, does not affect node/toolkit/runtime\n- [x] If the changes introduce a new feature, I have bumped the node minor version\n- [x] Update documentation (if relevant)\n- [x] Updated AGENTS.md if build commands, architecture, or workflows changed\n- [x] No new todos introduced\n\n## 🧪 Testing Evidence\n\nOn Git 2.55.[collaborator], before the fix `git hook list commit-msg` exited 128 with the collision error. After renaming the friendly-name to `dco` (and clearing the stale local config), `git hook list commit-msg` exits [collaborator] and prints `dco`.\n\n- [ ] Additional tests are provided (if possible)\n\n## 🔱 Fork Strategy\n\n- [x] N/A\n\n## Links\n\nN/A",
+          "labels": [
+            "skip-changes-check-all",
+            "ai-assisted"
+          ],
+          "state": "closed",
+          "url": "https://github.com/midnightntwrk/midnight-node/pull/1866",
+          "created_at": "2026-07-13T10:27:36Z",
+          "merged_at": "2026-07-14T08:31:21Z",
+          "review_comments": [
+            {
+              "body": "Content removed.",
+              "author_role": "other",
+              "kind": "review"
+            },
+            {
+              "body": "Content removed.",
+              "author_role": "other",
+              "kind": "review"
+            },
+            {
+              "body": "Codex usage limits have been reached for code reviews. Please check with the admins of this repo to increase the limits by adding credits.\nCredits must be used to enable repository wide code reviews.",
+              "author_role": "other",
+              "kind": "conversation"
+            },
+            {
+              "body": "<a target='_blank' href='https://app.datadoghq.eu/ci/pipeline-executions?query=ci_level%3Ajob+%40ci.status%3Aerror+%40git.commit.sha%3A16ace3e1d33922fe741f070145088d47940f9276&referrer=pr-comment&start=1783954407000'><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.datadoghq.com/static/images/pr_comments/software_delivery/badges_header/pipelines-warning.svg\"/><img src=\"https://static.datadoghq.com/static/images/pr_comments/software_delivery/badges_header/pipelines-warning-light.svg\" alt=\"Pipelines\" align=\"center\" /></picture></a>\n\n## ⚠️ Warnings\n\n🚦 **1 Pipeline job failed**\n\n<blockquote>\n<div>\n\n<code> CI &#43; E2E | Local Environment Tests </code> &nbsp;&nbsp;<a href=\"https://app.datadoghq.eu/ci/pipeline-executions?query=ci_level%3Ajob&#43;ci.job_correlation_id%3Aa364abbff0ca064d&amp;referrer=pr-comment&amp;start=1783954407000\" title=\"View in Datadog\"><img src=\"https://static.datadoghq.com/static/images/pr_comments/software_delivery/datadog_icon.svg\" alt=\"View in Datadog\" align=\"center\" /></a> &nbsp; <a href=\"https://github.com/midnightntwrk/midnight-node/actions/runs/29262024295/job/86861505294\" title=\"View in GitHub Actions\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.datadoghq.com/static/images/pr_comments/software_delivery/logos/github-logo-dark.svg\"/><img src=\"https://static.datadoghq.com/static/images/pr_comments/software_delivery/logos/github-logo-light.svg\" alt=\"GitHub Actions\" align=\"center\" /></picture></a>\n\n</div>\n</blockquote>\n\nUseful? React with 👍 / 👎\n\n<sub>\nThis comment will be updated automatically if new data arrives. <br />\n🔗 Commit SHA: 16ace3e | <a href=\"https://docs.datadoghq.com/integrations/guide/source-code-integration/#pr-comments\">Docs</a> | Give us <a href=\"https://forms.gle/ys6MDmdQEeC5pkzWA\">feedback</a>!\n</sub>",
+              "author_role": "other",
+              "kind": "conversation"
+            }
+          ],
+          "linked_issues": []
+        }
+      ],
+      "issues": [
+        {
+          "number": 1893,
+          "title": "local-env: contract-compiler fails — [collaborator]/blueprint[collaborator] drifts from pinned tx (TypedScript import)",
+          "description": "## Summary\n\n`local-environment` fails to start: the `contract-compiler` service errors out during the deployment step with:\n\n```\n=== Contracts Deployment ===\n$ bun run cli-yargs/index.ts deploy -p kupmios\nSyntaxError: Export named 'TypedScript' not found in module '/tmp/contracts/node_modules/[collaborator]/tx/dist/index.mjs'.\nBun v1.3.6 (Linux arm64)\nerror: script \"cli\" exited with code 1\n```\n\nThis blocks the whole stack, since `midnight-setup` and the `midnight-node-*` services all `depend_on` `contract-compiler` completing successfully. It is **not** architecture-related — it reproduces on amd64 too.\n\n## Root cause\n\nThe blueprint TypeScript-binding generator is invoked with a **floating version**:\n\n- `midnight-reserve-contracts/cli-yargs/commands/build/index.ts` — `bunx [collaborator]/blueprint[collaborator] ...` (the path used by `just build local`)\n- `midnight-reserve-contracts/Justfile` (`use-env` recipe) — same, latent\n\n`[collaborator]/blueprint[collaborator].9.[collaborator]` (current `[collaborator]`) generates bindings that `import { TypedScript } from \"[collaborator]/tx\"`. But the repo pins the runtime blaze stack via `bun.lock` to `[collaborator]/tx[collaborator].14.1` (transitively, through `sdk[collaborator].2.47` / `emulator` / `wallet`), which predates the `TypedScript` export. The generated code and the installed runtime deps drift apart, so bun fails to resolve the import at deploy time.\n\nBlueprint `[collaborator].8.2` (matching the repo's `^[collaborator].8.2` devDependency) still emits the older `applyParamsToScript`/`cborToScript` style from `[collaborator]/uplc`, which is compatible with the pinned `tx[collaborator].14.1`.\n\n## Fix\n\nPin the generator to `[collaborator]/blueprint[collaborator].8.2` in the submodule (both invocation sites). Verified: `contract-compiler` then compiles, deploys, and exports contract data successfully (exit [collaborator]).\n\nLonger-term, the blaze stack should be bumped forward as a set (so `tx` exports `TypedScript`) rather than relying on a floating `[collaborator]`, which is inherently non-reproducible.\n\n## Affected\n\n- `midnight-reserve-contracts` submodule (fix lives here; node bumps the pointer)\n- `local-environment` (all networks that run `contract-compiler`)\n",
+          "url": "https://github.com/midnightntwrk/midnight-node/issues/1893",
+          "closed_at": "2026-07-17T08:49:20Z"
+        },
+        {
+          "number": 1873,
+          "title": "local-env: run natively on arm64 (arch-specific busybox + db-sync image)",
+          "description": "### Context & versions\n\n`local-environment` on an arm64 host (Apple Silicon / aarch64 Linux). Most services already use `platform: ${ARCHITECTURE}` and run native, but two pieces were still amd64-only.\n\n### Steps to reproduce\n\n1. On an arm64 host, source `local-environment/.envrc` (sets `ARCHITECTURE=linux/arm64`).\n2. `npm run run:local-env`.\n3. `cardano-node-1` starts its entrypoint.\n\n### Expected behavior\n\nThe whole stack runs natively on arm64; Cardano containers execute their helper tooling without error.\n\n### Actual behavior\n\nTwo problems:\n\n1. **`cardano-node-1` crashes** at `configurations/cardano/entrypoint.sh:127`:\n   ```\n   /entrypoint.sh: line 127: /busybox: cannot execute binary file: Exec format error\n   ```\n   The vendored `configurations/busybox` (mounted into `cardano-node-1`, `kupo`, `ogmios`, `db-sync`, `mint-cnight-supply` to provide `sed`/`awk`/`grep`/`wget`, which the Cardano image lacks) is an **x86-64** binary. It only worked while those containers ran under amd64/emulation; native arm64 exposes the mismatch.\n\n2. **`db-sync` was pinned to `platform: linux/amd64`** and ran under emulation, because `cardano-db-sync` does not publish a single multi-arch tag — the amd64 release (`13.7.[collaborator].4`) and the arm64 build (`feature_aarch64-release-bin-arm64`) live under separate tags.\n\n### Fix\n\n- Vendor an arch-specific busybox (`busybox.amd64` / `busybox.arm64`, both static BusyBox 1.35.[collaborator]) and mount `./configurations/busybox.${ARCH}:/busybox`; export `ARCH` from `.envrc`.\n- Select the arm64 `db-sync` image on arm64 hosts and switch its pin to `platform: ${ARCHITECTURE}`.\n\nBoth amd64 and arm64 then run fully native.",
+          "url": "https://github.com/midnightntwrk/midnight-node/issues/1873",
+          "closed_at": "2026-07-14T14:19:25Z"
+        }
+      ]
+    }
+  ]
+}

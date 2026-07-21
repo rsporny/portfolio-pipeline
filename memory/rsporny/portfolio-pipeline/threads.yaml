@@ -3,23 +3,24 @@ threads:
   title: 'Neutral core: memory layer and pluggable site adapters'
   status: ongoing
   started_week: 2026-W28
-  last_active_week: 2026-W28
-  summary: 'The memory layer matured this week: the mutation applier now validates
-    every proposed change and rejects unknown thread ids or colliding entries before
-    committing, and the two-stage transform became memory-aware via a typed thread_ref
-    relation that links detected initiatives to known threads and surfaces assumptions
-    due for review. Site-specific rendering (front-matter, manifest schema, per-series
-    numbering) sits fully behind a neutral SiteAdapter protocol so the core carries
-    no site vocabulary, and weekly plus custom entries share a single manifest numbering
-    authority. Raw activity snapshots are committed as a versioned, auditable source
-    of truth. The architectural spine for a reusable, forkable core is now in place
-    and exercised end-to-end.'
+  last_active_week: 2026-W29
+  summary: 'The memory layer hardened significantly this week: proposal models now
+    expose only genuinely editorial fields while code stamps run-week metadata and
+    computes review horizons as relative offsets, making structurally-impossible states
+    (past-dated reviews, invented statuses) unrepresentable. This closed a failure
+    mode where a single stray model-supplied field caused the all-or-nothing apply
+    step to silently reset an entire repository''s thread registry. Added ordered
+    multi-topic focus control and week-relative temporal framing so generated entries
+    lead reliably on chosen threads and read same-week work in present tense. The
+    weekly CI workflow now commits activity snapshots and memory updates back to the
+    main branch as bot commits, giving the continuity layer a durable, reviewable
+    source of truth beyond ephemeral workflow artifacts.'
   assumptions:
   - text: A deterministic code-validates-LLM-proposals mutation layer is sufficient
       to keep the memory registry free of silent corruption without human review of
       every change.
     made_week: 2026-W28
-    status: open
+    status: confirmed
     review_by: 2026-W36
   - text: The site-adapter protocol is general enough that a second site could be
       added without changing the neutral core.
@@ -31,6 +32,18 @@ threads:
     made_week: 2026-W28
     status: open
     review_by: 2026-W36
+  - text: Narrowing the proposal field contract so code owns all non-editorial fields
+      eliminates the class of silent registry-corruption bugs rather than merely relocating
+      them.
+    made_week: 2026-W29
+    status: open
+    review_by: 2026-W39
+  - text: Committing snapshots and memory updates back to main as bot commits is a
+      sustainable continuity mechanism and won't produce noisy or conflicting history
+      over time.
+    made_week: 2026-W29
+    status: open
+    review_by: 2026-W41
   key_decisions:
   - week: 2026-W28
     decision: Separate a neutral core pipeline from site-specific rendering via a
@@ -48,15 +61,17 @@ threads:
   title: Reader-focused output and end-to-end publishing gate
   status: ongoing
   started_week: 2026-W28
-  last_active_week: 2026-W28
-  summary: 'The reader-focused output and editorial loop were consolidated this week:
-    one channel-neutral post with per-initiative categorization, proof-of-work links,
-    generalized domain context, and auto-numbered devlog titles. Review and publish
-    commands round-trip YAML front-matter, list drafts by status, and publish approved
-    entries into the website repo while keeping social and highlights local. A weekly
-    GitHub Action collects activity, runs the transform, and opens a PR against the
-    website repo with a human merge as the sole publish trigger. Hand-written repository
-    context cards seed the transform with accurate domain grounding.'
+  last_active_week: 2026-W29
+  summary: 'The reader-focused output and editorial loop consolidated into one channel-neutral
+    post with per-initiative categorization, proof-of-work links, generalized domain
+    context, and auto-numbered devlog titles. This week the activity collector gained
+    deep-context enrichment (schema version 3, backward-compatible): review discussion
+    and linked issues are pulled for repositories that already have an active work
+    thread, giving the model stages the ''why'' behind changes as understanding-only
+    grounding without a costly two-pass fetch. Third-party name redaction now masks
+    all non-owner logins and display names before the raw snapshot is written, and
+    tolerant JSON parsing plus a coercing validator harden the pipeline against imperfect
+    model output.'
   assumptions:
   - text: A single channel-neutral post serves the audience better than multilingual/per-channel
       variants.
@@ -73,6 +88,18 @@ threads:
     made_week: 2026-W28
     status: open
     review_by: 2026-W36
+  - text: Repo-level gating of PR enrichment (only fetching review/issue context for
+      repositories with an active thread) keeps enrichment cheap without meaningfully
+      degrading summary quality for newer repositories.
+    made_week: 2026-W29
+    status: open
+    review_by: 2026-W39
+  - text: Collection-time redaction of non-owner identities is sufficient to keep
+      the public audit trail free of collaborator identities across varied activity
+      shapes.
+    made_week: 2026-W29
+    status: open
+    review_by: 2026-W41
   key_decisions:
   - week: 2026-W28
     decision: Automate PR generation into the website repo while keeping a human merge
