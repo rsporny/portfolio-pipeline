@@ -8,6 +8,9 @@ on:
       since:
         description: "Start date YYYY-MM-DD (default: last 7 days)"
         required: false
+      until:
+        description: "End date YYYY-MM-DD (default: now); pair with 'since' to backfill a past week exactly"
+        required: false
       focus:
         description: "Thread id(s) to lead on, space-separated (default: model auto-picks)"
         required: false
@@ -43,11 +46,16 @@ jobs:
           # Fine-grained PAT: read-only contents/PRs/issues on the allowlisted repos.
           GH_ACTIVITY_TOKEN: ${{ secrets.GH_ACTIVITY_TOKEN }}
         run: |
+          # Empty on scheduled runs → default rolling 7-day window. Dates are
+          # YYYY-MM-DD (no spaces), so unquoted expansion is safe.
+          ARGS=""
           if [ -n "${{ github.event.inputs.since }}" ]; then
-            uv run pipeline collect --since "${{ github.event.inputs.since }}"
-          else
-            uv run pipeline collect
+            ARGS="$ARGS --since ${{ github.event.inputs.since }}"
           fi
+          if [ -n "${{ github.event.inputs.until }}" ]; then
+            ARGS="$ARGS --until ${{ github.event.inputs.until }}"
+          fi
+          uv run pipeline collect $ARGS
 
       - name: Resolve week and activity
         id: meta
