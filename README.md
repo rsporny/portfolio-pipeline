@@ -182,13 +182,21 @@ The schedule is a `cron` in `weekly.yml` (Sundays 16:00 UTC); adjust to taste, o
 trigger a run by hand from the Actions tab (*Run workflow*), optionally passing
 `since` for a backfill and `focus` to lead on specific thread(s).
 
-**Eval workflow (optional, uses the model).** `evals.yml` calls the paid API, so
-its `ANTHROPIC_API_KEY` should live in a **protected environment**, not a plain
-repo secret: create an environment named `evals` (*Settings → Environments*), add
-`ANTHROPIC_API_KEY` to it, and set a **required reviewer** so each run must be
-approved before the key is exposed. The workflow never runs on a pull request, so
-a fork PR can't reach the key regardless; the environment is defense in depth. Set
-a spend cap on the key too.
+**Eval workflow (optional, uses the model).** `evals.yml` calls the paid API. It
+reuses the same `ANTHROPIC_API_KEY` **repo secret** as the weekly Action — no
+separate secret needed. Because a fork PR never receives repo secrets and this
+workflow doesn't run on `pull_request`, an outside contributor can't spend the key
+regardless.
+
+The `evals` **environment** the workflow references adds one thing on top: a
+manual **approval gate**. Create an environment named `evals` (*Settings →
+Environments*) and add a **required reviewer** — the eval job then pauses until you
+approve it, so an expensive run never fires unattended (e.g. on a `main` push that
+touches a prompt). You do **not** move the key into the environment: the approval
+gate comes from the job referencing the environment, while `secrets.ANTHROPIC_API_KEY`
+still resolves to your repo secret. (You *may* add a separate environment-scoped
+key if you want one you can rotate independently — if you do, remember the
+environment copy is the one the eval job uses.) Set a spend cap on the key too.
 
 ## Sample draft
 
