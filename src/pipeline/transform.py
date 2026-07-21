@@ -359,23 +359,27 @@ def _render_summary(week: str, initiatives: Initiatives) -> str:
 def transform_week(
     config: Config,
     llm: LLMClient,
-    raw_dir: Path | str = "raw",
-    drafts_dir: Path | str = "drafts",
+    raw_dir: Path | str | None = None,
+    drafts_dir: Path | str | None = None,
     week: str | None = None,
     memory_root: Path | str | None = None,
     focus_selector: Callable[[list[Thread]], list[str]] | None = None,
     enforce_checks: bool = True,
 ) -> Path:
     """Run redaction → Stage A (memory-aware) → indexer → Stage B (thread-aware)
-    and write the draft bundle for a week. Memory mutations are applied to the
-    working tree under ``memory_root`` (default: ``config.memory.root``).
+    and write the draft bundle for a week. Paths default to ``config.state_dir(…)``
+    (``raw``/``drafts``/``memory`` under ``state.root``); tests pass explicit dirs.
 
     ``focus_selector`` (optional) is called after the indexer with the threads
     active this week and returns the ids the entry should lead on; the caller owns
     how they are chosen (interactive prompt, ``--focus`` flag, …). Omitted or an
     empty return means the model picks the lead itself."""
+    raw_dir = Path(raw_dir) if raw_dir is not None else config.state_dir("raw")
+    drafts_dir = Path(drafts_dir) if drafts_dir is not None else config.state_dir("drafts")
+    root = Path(memory_root) if memory_root is not None else config.state_dir("memory")
+
     if week:
-        activity_path = Path(raw_dir) / week / "activity.json"
+        activity_path = raw_dir / week / "activity.json"
         if not activity_path.exists():
             raise FileNotFoundError(f"{activity_path} not found — run `collect` for {week} first")
     else:
@@ -383,10 +387,9 @@ def transform_week(
 
     activity = Activity.model_validate_json(activity_path.read_text())
     week = activity.week
-    out_dir = Path(drafts_dir) / week
+    out_dir = drafts_dir / week
     out_dir.mkdir(parents=True, exist_ok=True)
     phrases = config.redaction.forbidden_phrases
-    root = Path(memory_root) if memory_root is not None else Path(config.memory.root)
 
     memories = _load_repo_memories(activity, root)
 

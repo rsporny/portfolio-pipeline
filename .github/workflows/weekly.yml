@@ -15,22 +15,31 @@ on:
         description: "Thread id(s) to lead on, space-separated (default: model auto-picks)"
         required: false
 
-# `contents: write` lets the bot commit derived state (raw/ + memory/) back to
-# THIS repo's main. Writing to the website repo still uses the scoped
-# LANDING_PAGE_TOKEN PAT below, and the Action only opens a PR there — it never
-# merges, so nothing is published without a human merge.
+# The engine is stateless (v0.4.1): it commits NOTHING back to this repo, so it
+# needs no write access here. The instance — config + state (raw/, memory/) +
+# content — lives in the site repo, reached with the scoped LANDING_PAGE_TOKEN.
+# The single weekly PR bundles the rendered devlog with its raw/ + memory/ state;
+# the Action only opens that PR — a human merges to publish (Cloudflare deploys).
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: weekly-devlog
   cancel-in-progress: false
 
+# NOTE: requires the instance (rsporny/landing-page) to hold config.yaml with
+# `state.root: "."` + `output.site_repo_path: "."`, plus raw/ + memory/, and to
+# gitignore the drafts/ approved/ published/ working dirs. This workflow can only
+# be validated once that migration has landed.
 jobs:
   devlog:
     runs-on: ubuntu-latest
+    env:
+      # The engine's console script, installed into the tool checkout's venv. It
+      # is run from the site checkout (cwd) so all state resolves under state.root.
+      PIPELINE: ${{ github.workspace }}/.venv/bin/pipeline
     steps:
-      - name: Checkout pipeline
+      - name: Checkout engine
         uses: actions/checkout@v4
 
       - name: Set up uv
@@ -38,10 +47,18 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install
+      - name: Install engine
         run: uv sync
 
+      - name: Checkout instance (config + state + content)
+        uses: actions/checkout@v4
+        with:
+          repository: rsporny/landing-page
+          token: ${{ secrets.LANDING_PAGE_TOKEN }}
+          path: site
+
       - name: Collect activity
+        working-directory: site
         env:
           # Fine-grained PAT: read-only contents/PRs/issues on the allowlisted repos.
           GH_ACTIVITY_TOKEN: ${{ secrets.GH_ACTIVITY_TOKEN }}
@@ -55,10 +72,11 @@ jobs:
           if [ -n "${{ github.event.inputs.until }}" ]; then
             ARGS="$ARGS --until ${{ github.event.inputs.until }}"
           fi
-          uv run pipeline collect $ARGS
+          "$PIPELINE" collect $ARGS
 
       - name: Resolve week and activity
         id: meta
+        working-directory: site
         run: |
           WEEK=$(ls -d raw/*/ 2>/dev/null | sort | tail -1 | xargs -r basename)
           HAS=false
@@ -71,6 +89,7 @@ jobs:
 
       - name: Transform (two-stage AI)
         if: steps.meta.outputs.has_activity == 'true'
+        working-directory: site
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           # Optional manual override; empty on cron runs, so the model auto-picks.
@@ -78,48 +97,28 @@ jobs:
         run: |
           args=(--week "${{ steps.meta.outputs.week }}")
           for f in $FOCUS; do args+=(--focus "$f"); done
-          uv run pipeline transform "${args[@]}"
+          "$PIPELINE" transform "${args[@]}"
 
-      - name: Commit raw + memory (bot)
-        # Not gated on has_activity: even an empty week commits its empty
-        # raw/ snapshot as an audit-trail record. memory/ is only mutated when
-        # transform ran. Derived, regenerable state — committed without a PR.
-        run: |
-          git config user.name "portfolio-pipeline[bot]"
-          git config user.email "portfolio-pipeline[bot]@users.noreply.github.com"
-          git add raw/ memory/
-          if git diff --cached --quiet; then
-            echo "Nothing to commit."
-          else
-            git commit -m "chore(bot): ${{ steps.meta.outputs.week }} activity + memory"
-            git pull --rebase --autostash origin main
-            git push origin HEAD:main
-          fi
-
-      - name: Checkout landing-page
+      - name: Render devlog into the site
         if: steps.meta.outputs.has_activity == 'true'
-        uses: actions/checkout@v4
-        with:
-          repository: rsporny/landing-page
-          token: ${{ secrets.LANDING_PAGE_TOKEN }}
-          path: site
-
-      - name: Stage devlog into the site checkout
-        if: steps.meta.outputs.has_activity == 'true'
+        working-directory: site
         run: |
           WEEK="${{ steps.meta.outputs.week }}"
           mkdir -p approved
           cp -r "drafts/$WEEK" "approved/$WEEK"
-          uv run pipeline publish --site-repo site
+          # state.root and site_repo_path both resolve to this tree, so the devlog
+          # + manifest land in content/devlog right here — one repo, no --site-repo.
+          "$PIPELINE" publish
 
       - name: Build PR body
         if: steps.meta.outputs.has_activity == 'true'
         id: prbody
+        working-directory: site
         run: |
           WEEK="${{ steps.meta.outputs.week }}"
           strip() { awk '/^---$/{c++; next} c>=2' "$1"; }  # drop YAML front matter
           {
-            echo "Automated devlog for **$WEEK**."
+            echo "Automated devlog for **$WEEK**, bundled with its \`raw/\` + \`memory/\` state."
             echo
             echo "Review the \`content/devlog/$WEEK.md\` diff and **merge to publish** — Cloudflare deploys on merge. To change anything, edit this PR first."
             echo
@@ -130,14 +129,14 @@ jobs:
             echo "### Highlights"
             echo
             strip "published/$WEEK/highlights.md"
-          } > pr-body.md
+          } > "$GITHUB_WORKSPACE/pr-body.md"
           {
             echo "body<<PRBODY"
-            cat pr-body.md
+            cat "$GITHUB_WORKSPACE/pr-body.md"
             echo "PRBODY"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Open PR to landing-page
+      - name: Open the weekly PR (devlog + state) to the instance
         if: steps.meta.outputs.has_activity == 'true'
         uses: peter-evans/create-pull-request@v6
         with:
@@ -146,7 +145,13 @@ jobs:
           base: main
           branch: devlog/${{ steps.meta.outputs.week }}
           delete-branch: true
-          commit-message: "devlog: ${{ steps.meta.outputs.week }}"
+          # One atomic PR: the rendered content plus the week's committed state.
+          # Working dirs (drafts/approved/published) are excluded from the commit.
+          add-paths: |
+            content/devlog
+            raw
+            memory
+          commit-message: "devlog: ${{ steps.meta.outputs.week }} (+ raw/memory state)"
           title: "Devlog: ${{ steps.meta.outputs.week }}"
           body: ${{ steps.prbody.outputs.body }}
 
@@ -156,6 +161,6 @@ jobs:
         with:
           name: pipeline-run-${{ steps.meta.outputs.week }}
           path: |
-            raw/
-            drafts/
+            site/raw
+            site/drafts
           if-no-files-found: ignore

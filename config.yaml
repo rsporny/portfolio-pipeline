@@ -11,13 +11,16 @@ repos:
     midnightntwrk/midnight-node: >-
       Midnight blockchain node — a data-protection/privacy-focused network in
       the Cardano ecosystem, built on Substrate (Rust).
-memory:
-  root: memory/
+# All instance state (raw/, memory/, provenance/, drafts/, approved/, published/)
+# resolves under state.root. An instance is one tree — the site repo — holding
+# this config, its state, and content/. Run the engine from there ("." = here).
+state:
+  root: "."
 redaction:
   forbidden_phrases: []
   redact_third_party_names: true
 output:
-  site_repo_path: ~/repos/landing-page
+  site_repo_path: "."          # the same instance tree; override for a CI checkout
   site_devlog_dir: content/devlog
   adapter: sporny_pl
 anthropic:
