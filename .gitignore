@@ -9,12 +9,12 @@ build/
 .pytest_cache/
 .ruff_cache/
 
-# raw/ is committed since v0.2 — the versioned source of truth (audit &
-# reproducibility). memory/ is committed too. Local editorial working state is
-# not: keep-files hold the dirs; the content is ignored.
-drafts/*
-!drafts/.gitkeep
-approved/*
-!approved/.gitkeep
-published/*
-!published/.gitkeep
+# Instance state lives with the instance (the site repo) under state.root, never
+# in the engine. Since v0.4.1 the tool ships stateless: if the engine is run from
+# a checkout of this repo, these dirs are created at runtime and stay untracked.
+raw/
+memory/
+provenance/
+drafts/
+approved/
+published/

@@ -129,7 +129,7 @@ def collect(
     cfg = load_config(config)
     with GitHubClient() as client:
         activity = collect_activity(cfg, client, since, until)
-    out_path = write_activity(activity)
+    out_path = write_activity(activity, cfg.state_dir("raw"))
     _report(activity, out_path)
 
 
@@ -154,15 +154,15 @@ def run(
     cfg = load_config(config)
     with GitHubClient() as client:
         activity = collect_activity(cfg, client, since, until)
-    out_path = write_activity(activity)
+    out_path = write_activity(activity, cfg.state_dir("raw"))
     _report(activity, out_path)
     _transform(cfg, activity.week, focus)
 
 
 @app.command()
-def review() -> None:
+def review(config: str = CONFIG_OPTION) -> None:
     """List drafts awaiting editorial review."""
-    records = list_drafts()
+    records = list_drafts(load_config(config).state_dir("drafts"))
     if not records:
         typer.echo("No drafts found in drafts/.")
         return

@@ -195,15 +195,15 @@ def collect_activity(
     window and assemble the versioned :class:`Activity` document.
 
     Since v0.3, PRs in a repo with an active thread (``memory_root`` →
-    ``config.memory.root``) are enriched with review discussion and linked
-    issues, and all third-party names are redacted before the activity is
+    ``config.state_dir("memory")``) are enriched with review discussion and
+    linked issues, and all third-party names are redacted before the activity is
     returned (and thus before it is written to the public ``raw/``)."""
     since_dt, until_dt = resolve_window(since, until, config.locale.timezone)
     since_iso = since_dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     until_iso = until_dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     since_date = since_dt.date().isoformat()
     until_date = until_dt.date().isoformat()
-    root = Path(memory_root) if memory_root is not None else Path(config.memory.root)
+    root = Path(memory_root) if memory_root is not None else config.state_dir("memory")
     participants: set[str] = set()
 
     repos: list[RepoActivity] = []

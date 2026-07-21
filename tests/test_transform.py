@@ -8,7 +8,7 @@ import anthropic
 import httpx
 import pytest
 
-from pipeline.config import Config, RedactionConfig, ReposConfig
+from pipeline.config import Config, RedactionConfig, ReposConfig, StateConfig
 from pipeline.llm import LLMClient, TransformError, parse_json_response, strip_fences
 from pipeline.memory import Assumption, Thread, ThreadRegistry, load_registry, save_registry
 from pipeline.models import (
@@ -267,11 +267,30 @@ def _write_activity_with_deep_pr(raw_dir, week: str = "2026-W27") -> str:
     return week
 
 
-def _config(forbidden=None, descriptions=None):
+def _config(forbidden=None, descriptions=None, state_root=None):
     return Config(
         github_user="rsporny",
         repos=ReposConfig(allowlist=["o/r"], descriptions=descriptions or {}),
         redaction=RedactionConfig(forbidden_phrases=forbidden or []),
+        state=StateConfig(root=str(state_root)) if state_root is not None else StateConfig(),
+    )
+
+
+def test_transform_week_writes_only_under_state_root(tmp_path):
+    """The engine is stateless: with no explicit dirs, raw/drafts/memory all
+    resolve under state.root and the run writes nothing outside it."""
+    instance = tmp_path / "instance"
+    cfg = _config(state_root=instance)
+    week = _write_activity(cfg.state_dir("raw"))
+    llm = _FakeLLM([_stage_a(), _indexer(), _stage_b()])
+
+    out_dir = transform_week(cfg, llm, week=week)  # no raw_dir/drafts_dir/memory_root
+
+    assert out_dir == cfg.state_dir("drafts") / week
+    written = [p for p in tmp_path.rglob("*") if p.is_file()]
+    assert written, "expected the run to write draft files"
+    assert all(instance in p.parents for p in written), (
+        f"engine wrote outside state.root: {[p for p in written if instance not in p.parents]}"
     )
 
 

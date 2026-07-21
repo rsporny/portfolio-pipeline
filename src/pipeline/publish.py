@@ -68,8 +68,8 @@ def _write_changes(adapter: SiteAdapter, entry: DevlogEntry, ctx: RenderContext)
 
 def publish_approved(
     config: Config,
-    approved_dir: Path | str = "approved",
-    published_dir: Path | str = "published",
+    approved_dir: Path | str | None = None,
+    published_dir: Path | str | None = None,
     *,
     site_repo: Path | str | None = None,
     dry_run: bool = False,
@@ -80,9 +80,12 @@ def publish_approved(
     to the configured adapter; this function never commits or pushes the website.
 
     ``site_repo`` overrides ``config.output.site_repo_path`` (used by CI to
-    target a checked-out copy of the website repo)."""
-    approved_dir = Path(approved_dir)
-    published_dir = Path(published_dir)
+    target a checked-out copy of the website repo). ``approved_dir`` /
+    ``published_dir`` default to ``config.state_dir(…)`` under ``state.root``."""
+    approved_dir = Path(approved_dir) if approved_dir is not None else config.state_dir("approved")
+    published_dir = (
+        Path(published_dir) if published_dir is not None else config.state_dir("published")
+    )
 
     week_dirs = sorted(p for p in approved_dir.glob("*") if p.is_dir())
     if not week_dirs:

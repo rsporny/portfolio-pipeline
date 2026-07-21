@@ -16,7 +16,10 @@ class RedactionConfig(BaseModel):
 
 
 class OutputConfig(BaseModel):
-    site_repo_path: str = "~/code/sporny.pl"
+    # Defaults to the current dir: an instance is a single tree (the site repo)
+    # holding config.yaml, state (state.root), and content/. Override to target a
+    # separate site checkout (e.g. from CI, or when the engine runs elsewhere).
+    site_repo_path: str = "."
     site_devlog_dir: str = "content/devlog"
     # Selects the site-specific renderer in src/pipeline/site_adapter/. All
     # landing-page knowledge lives there; forking means writing another adapter.
@@ -42,9 +45,17 @@ class ContentConfig(BaseModel):
     devlog_title_prefix: str = "Senior SDET log"
 
 
-class MemoryConfig(BaseModel):
-    # Root of the committed thread registry (memory/{org}/{repo}/).
-    root: str = "memory/"
+class StateConfig(BaseModel):
+    # Root under which ALL instance state resolves: raw/, memory/, provenance/,
+    # drafts/, approved/, published/. The engine is stateless — it ships none of
+    # these and writes nothing outside this root. Defaults to the current dir so
+    # an instance (the site repo) can hold its own config + state + content, and
+    # the engine is simply run from there. A fork points this wherever it likes.
+    root: str = "."
+
+    @property
+    def root_path(self) -> Path:
+        return Path(self.root).expanduser()
 
 
 class ReposConfig(BaseModel):
@@ -69,7 +80,13 @@ class Config(BaseModel):
     anthropic: AnthropicConfig = AnthropicConfig()
     locale: LocaleConfig = LocaleConfig()
     content: ContentConfig = ContentConfig()
-    memory: MemoryConfig = MemoryConfig()
+    state: StateConfig = StateConfig()
+
+    def state_dir(self, name: str) -> Path:
+        """Resolve a state subdir (``raw``, ``memory``, ``drafts``, ``approved``,
+        ``published``, ``provenance``) under ``state.root``. The single place the
+        engine turns a logical state area into a path — nothing hardcodes these."""
+        return self.state.root_path / name
 
 
 def load_config(path: Path | str | None = None) -> Config:

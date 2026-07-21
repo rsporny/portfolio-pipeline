@@ -60,8 +60,10 @@ repos:
     # or the owner's own private repos — nothing else
   descriptions:                        # optional per-repo domain context (categorization)
     rsporny/portfolio-pipeline: "Commit→content pipeline (Python)."
-memory:
-  root: memory/
+state:
+  root: "."                            # since v0.4.1: all instance state (raw/, memory/,
+                                       # provenance/, drafts/approved/published) resolves here.
+                                       # An instance is one tree — the site repo — run from it.
 redaction:
   forbidden_phrases: []
   redact_third_party_names: true       # mask non-owner logins/names before raw/ + every model call
@@ -296,5 +298,14 @@ faithfulness; `transform_week` runs it after Stage B and **blocks** the run on a
 hard (`error`-severity) violation. `pipeline eval` runs the real transformer over
 `evals/cases/**` and writes a committed scorecard (`evals/RESULTS.md`); `evals.yml`
 drives it in CI on prompt/model changes, behind a protected environment and never
-reachable by a fork PR (the only workflow holding `ANTHROPIC_API_KEY`). Next: v0.5
-(see roadmap).
+reachable by a fork PR (the only workflow holding `ANTHROPIC_API_KEY`).
+
+**v0.4.1** — engine / state separation. The tool is now a **stateless, forkable
+engine**: it ships no committed `raw/`/`memory/`, and every state area resolves
+under one configurable `state.root` via `Config.state_dir(name)`. An *instance* is
+a single tree — the site repo — holding its own `config.yaml`, state (`raw/`,
+`memory/`, later `provenance/`), and `content/`; the engine is run from there and
+writes nothing outside `state.root` (a test asserts this). The weekly workflow
+installs the engine and runs it against the site checkout, opening **one** PR that
+bundles the rendered devlog with its `raw/` + `memory/` state — the engine commits
+nothing back to its own repo. Next: v0.5 (see roadmap).

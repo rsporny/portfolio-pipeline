@@ -61,8 +61,9 @@ longer stories instead of isolated weekly dumps. It tracks two things:
 
 Crucially, **the model proposes and code disposes**: the indexer only emits
 *proposed* mutations, which validated code applies to `memory/` deterministically.
-The model never writes memory files directly. The registry is committed to this
-repo, so every arc is transparent and reviewable in git history.
+The model never writes memory files directly. The registry is committed to the
+instance (the site repo, under `state.root`), so every arc is transparent and
+reviewable in git history.
 
 **Deep context, selectively.** An active thread earns richer signal: for a repo
 with an ongoing thread, the collector also pulls each of my PRs' *review
@@ -144,13 +145,13 @@ uv run pytest                      # the tests are part of the story
 ```
 
 Weekly automation lives in `.github/workflows/weekly.yml` — see SPEC.md
-Module 5. It opens a PR against the website repo; merging it publishes. The
-Action also commits each week's `raw/` activity snapshot and `memory/` updates
-back to this repo as clearly-labeled bot commits — that derived state is the
-audit trail and the seed for next week's continuity, so it must outlive the
-run's short-lived workflow artifacts. A manual `workflow_dispatch` run accepts an
-optional `focus` input to lead the entry on specific thread(s); the scheduled run
-lets the model pick.
+Module 5. Since v0.4.1 the engine is **stateless**: it runs against the site repo
+as its `state.root` and opens **one** PR that bundles the rendered devlog with
+that week's `raw/` activity snapshot and `memory/` updates — the audit trail and
+the seed for next week's continuity, now living with the instance rather than
+committed back to the engine repo. Merging the PR publishes. A manual
+`workflow_dispatch` run accepts an optional `focus` input to lead the entry on
+specific thread(s); the scheduled run lets the model pick.
 
 ## Running the weekly Action (fork setup)
 
@@ -169,14 +170,16 @@ stays a human action.
 
 Two more one-time changes so the Action targets *your* site, not mine:
 
-- **Website repo.** `.github/workflows/weekly.yml` references `rsporny/landing-page`
-  (the `repository:` and PR steps). Point these at your own website repo, and make
-  sure `output.adapter` in `config.yaml` resolves an adapter that renders *your*
-  site's schema (see [Fork it: write an adapter](#fork-it-write-an-adapter)).
-- **Bot-commit permission.** The workflow commits each week's `raw/` snapshot and
-  `memory/` updates back to your fork's `main`; its `permissions: contents: write`
-  block covers this **unless** your org/repo default is locked down. If pushes fail,
-  set *Settings → Actions → General → Workflow permissions* to *Read and write*.
+- **Your instance = your site repo.** The engine is stateless; your instance lives
+  in your website repo, which holds its own `config.yaml` (with `state.root: "."`
+  and `output.site_repo_path: "."`), its `raw/` + `memory/` state, and `content/`.
+  Point `weekly.yml`'s `repository:` and PR steps at that repo, gitignore the
+  `drafts/`/`approved/`/`published/` working dirs there, and make sure
+  `output.adapter` resolves an adapter that renders *your* site's schema (see
+  [Fork it: write an adapter](#fork-it-write-an-adapter)).
+- **No engine write-back.** The engine commits nothing to its own repo, so it needs
+  no `contents: write` there; the single weekly PR (devlog + `raw/` + `memory/`)
+  goes to your site repo via `LANDING_PAGE_TOKEN`, and a human merges to publish.
 
 The schedule is a `cron` in `weekly.yml` (Sundays 16:00 UTC); adjust to taste, or
 trigger a run by hand from the Actions tab (*Run workflow*), optionally passing
