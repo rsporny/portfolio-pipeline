@@ -1,13 +1,29 @@
 # Eval results
 
-_Not yet generated in this checkout._
+- Model: `claude-opus-4-8`
+- Commit: `374f4a0`
+- Generated: 2026-07-21T09:10:08.223692+00:00
+- Cases: 4 (0 blocked) | error-severity failures: 0 | warnings: 3
 
-This scorecard is produced by `uv run pipeline eval` (and, in CI, by
-`.github/workflows/evals.yml`), which runs the real transformer over the golden
-cases in `evals/cases/` and scores each with the structural check library. The
-run needs `ANTHROPIC_API_KEY`, so it is not part of unit CI; the file is committed
-and overwritten on the next eval run.
+| check | baseline | continuity | deep-context | focus |
+|---|:-:|:-:|:-:|:-:|
+| devlog_word_count | ✓ | ✓ | ✓ | ✓ |
+| social_word_count | ✓ | ✓ | ✓ | ✓ |
+| social_hashtags | ✓ | ✓ | ✓ | ✓ |
+| no_exclamation | ✓ | ✓ | ✓ | ✓ |
+| no_solicitation | ✓ | ✓ | ✓ | ✓ |
+| no_collaborator_leak | ✓ | ✓ | ✓ | ✓ |
+| no_forbidden_phrase | ✓ | ✓ | ✓ | ✓ |
+| faithful_links | ✓ | ✓ | ✓ | ✓ |
+| proof_of_work_present | ✓ | ✓ | ✓ | ✓ |
+| initiative_count | ! | ! | ! | ✓ |
+| initiative_faithful_links | ✓ | ✓ | ✓ | ✓ |
+| valid_thread_ref | ✓ | ✓ | ✓ | ✓ |
 
-Each run records the model, the commit, a check × case pass/fail matrix, a
-failures list, and totals (error-severity failures / warnings). A `✗`
-(error-severity) fails the job — the pre-merge gate for a prompt or model change.
+## Failures
+
+- `baseline` / **initiative_count** [warn] — 1 initiative(s) (want 2–5)
+- `continuity` / **initiative_count** [warn] — 1 initiative(s) (want 2–5)
+- `deep-context` / **initiative_count** [warn] — 1 initiative(s) (want 2–5)
+
+_✓ pass · ✗ error-severity failure · ! warning_
