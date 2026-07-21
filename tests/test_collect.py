@@ -244,6 +244,42 @@ def test_deep_context_anonymizes_third_parties(httpx_mock, tmp_path):
     assert "@rsporny" in dumped
 
 
+def test_anonymize_survives_numeric_mention_colliding_with_a_number():
+    """Regression: a numeric ``@mention`` (e.g. ``@123``) becomes the name
+    ``123``, which used to be substituted into bare JSON integers when redaction
+    ran over the serialized document — e.g. a PR ``"number":123`` turned into
+    ``"number":[collaborator]``, breaking the JSON on re-parse. Redaction now
+    walks string leaves only, so numbers are left intact and the document stays
+    well-formed."""
+    from datetime import UTC, datetime
+
+    from pipeline.collect import _anonymize
+    from pipeline.models import Activity, PullRequest, RepoActivity, ReviewComment
+
+    now = datetime(2026, 7, 8, tzinfo=UTC)
+    pr = PullRequest(
+        number=123,
+        title="Fix the collector",
+        review_comments=[ReviewComment(body="thanks @123 for the review", author_role="other")],
+    )
+    activity = Activity(
+        generated_at=now,
+        since=now,
+        until=now,
+        week="2026-W28",
+        repos=[RepoActivity(repo="o/r", pull_requests=[pr])],
+    )
+
+    result = _anonymize(activity, {"123"}, _config())
+
+    # No crash, and the structure is preserved: the PR number is still 123,
+    # while the mention in the free-text body is masked.
+    assert result.repos[0].pull_requests[0].number == 123
+    assert result.repos[0].pull_requests[0].review_comments[0].body == (
+        "thanks [collaborator] for the review"
+    )
+
+
 def test_deep_context_off_when_disabled(httpx_mock, tmp_path):
     _seed_active_thread(tmp_path)
     httpx_mock.add_callback(_deep_router(), is_reusable=True)
