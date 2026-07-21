@@ -138,6 +138,33 @@ def _text_participants(text: str, github_user: str) -> set[str]:
     return {n for n in names if n and n.lower() != github_user.lower()}
 
 
+def _redact_tree(node: object, names: list[str], placeholder: str) -> tuple[object, int]:
+    """Recursively mask names in every string leaf of a JSON-shaped tree, leaving
+    numbers, booleans, and structure untouched. Redacting the parsed object (not
+    its serialized text) means a name can never collide with a bare JSON number
+    (e.g. a numeric ``@mention`` vs. a PR ``number``) or eat a structural quote,
+    so the round-trip back to :class:`Activity` is always well-formed."""
+    if isinstance(node, str):
+        return redact_names(node, names, placeholder)
+    if isinstance(node, list):
+        total = 0
+        out_list: list[object] = []
+        for item in node:
+            redacted, n = _redact_tree(item, names, placeholder)
+            out_list.append(redacted)
+            total += n
+        return out_list, total
+    if isinstance(node, dict):
+        total = 0
+        out_map: dict[object, object] = {}
+        for key, value in node.items():
+            redacted, n = _redact_tree(value, names, placeholder)
+            out_map[key] = redacted
+            total += n
+        return out_map, total
+    return node, 0
+
+
 def _anonymize(activity: Activity, participants: set[str], config: Config) -> Activity:
     """Mask every third-party name across the assembled activity before it is
     written to the public ``raw/`` (SPEC Module 3, hard constraints 3 & 5). The
@@ -149,10 +176,11 @@ def _anonymize(activity: Activity, participants: set[str], config: Config) -> Ac
     names = participants | _text_participants(dumped, config.github_user)
     if not names:
         return activity
-    redacted, n = redact_names(dumped, sorted(names), config.redaction.role_placeholder)
+    data = activity.model_dump(mode="json")
+    redacted, n = _redact_tree(data, sorted(names), config.redaction.role_placeholder)
     if n:
         logger.info("Redacted %d third-party name occurrence(s) before writing raw/", n)
-        return Activity.model_validate_json(redacted)
+        return Activity.model_validate(redacted)
     return activity
 
 
