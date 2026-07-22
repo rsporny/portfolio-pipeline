@@ -21,19 +21,27 @@ import httpx
 
 from .base import AnchorError, AnchorReceipt
 
-_BLOCKFROST_BASE = {
-    "preview": "https://cardano-preview.blockfrost.io/api/v0",
-    "preprod": "https://cardano-preprod.blockfrost.io/api/v0",
-}
+_TESTNETS = ("preview", "preprod")
 
 
-def _base_url(network: str) -> str:
-    try:
-        return _BLOCKFROST_BASE[network]
-    except KeyError:
+def _host(network: str) -> str:
+    if network not in _TESTNETS:
         raise AnchorError(
             f"unsupported Cardano network {network!r}; use 'preview' or 'preprod' (testnet only)"
-        ) from None
+        )
+    return f"https://cardano-{network}.blockfrost.io"
+
+
+def _context_base(network: str) -> str:
+    # BlockFrostChainContext / the blockfrost SDK append the API version, so the
+    # base must stop at ``/api`` (matching blockfrost.ApiUrls). Passing ``/api/v0``
+    # doubles the version → "Invalid path" 400.
+    return f"{_host(network)}/api"
+
+
+def _http_base(network: str) -> str:
+    # Our own read-back calls the REST API directly, so it needs the version.
+    return f"{_host(network)}/api/v0"
 
 
 def _project_id() -> str:
@@ -50,7 +58,7 @@ class CardanoAnchorBackend:
         self.metadata_label = metadata_label
 
     def anchor(self, root: bytes, *, network: str, tree_size: int) -> AnchorReceipt:
-        base = _base_url(network)
+        context_base = _context_base(network)
         project_id = _project_id()
         skey_path = os.environ.get("CARDANO_SIGNING_KEY")
         if not skey_path:
@@ -74,7 +82,7 @@ class CardanoAnchorBackend:
             ) from exc
 
         try:
-            context = BlockFrostChainContext(project_id, base_url=base)
+            context = BlockFrostChainContext(project_id, base_url=context_base)
             skey = PaymentSigningKey.load(skey_path)
             vkey = PaymentVerificationKey.from_signing_key(skey)
             address = Address(vkey.hash(), network=Network.TESTNET)
@@ -103,7 +111,7 @@ class CardanoAnchorBackend:
         )
 
     def fetch(self, tx_id: str, *, network: str) -> bytes | None:
-        base = _base_url(network)
+        base = _http_base(network)
         try:
             resp = httpx.get(
                 f"{base}/txs/{tx_id}/metadata",
