@@ -68,6 +68,13 @@ class ProvenanceAnchorConfig(BaseModel):
     network: str = "preview"  # preview | preprod (testnet only in v0.5)
     metadata_label: int = 8272025
 
+    @field_validator("backend", mode="before")
+    @classmethod
+    def _coerce_yaml_null(cls, v: object) -> object:
+        # `backend: null` in YAML parses to None, not the string "null" — accept
+        # both so the obvious config isn't a footgun.
+        return "null" if v is None else v
+
 
 class ProvenanceConfig(BaseModel):
     # v0.5: signed entries + a merkle transparency log anchored on-chain. Absent
