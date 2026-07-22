@@ -155,6 +155,12 @@ jobs:
           base: main
           branch: devlog/${{ steps.meta.outputs.week }}
           delete-branch: true
+          # Pin a non-personal identity so every weekly commit reads as
+          # bot-generated regardless of who (or what schedule) triggered the run —
+          # instead of the action defaults (author = github.actor, committer = the
+          # Actions bot).
+          author: "portfolio-pipeline[bot] <portfolio-pipeline[bot]@users.noreply.github.com>"
+          committer: "portfolio-pipeline[bot] <portfolio-pipeline[bot]@users.noreply.github.com>"
           # One atomic PR: the rendered content plus the week's committed state.
           # Working dirs (drafts/approved/published) are excluded from the commit.
           add-paths: |
@@ -170,7 +176,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: pipeline-run-${{ steps.meta.outputs.week }}
+          # Scope to THIS run's week — the rest of raw/ + drafts/ is already
+          # committed in the instance, so bundling it into the artifact is noise.
           path: |
-            site/${{ env.STATE_ROOT }}/raw
-            site/${{ env.STATE_ROOT }}/drafts
+            site/${{ env.STATE_ROOT }}/raw/${{ steps.meta.outputs.week }}
+            site/${{ env.STATE_ROOT }}/drafts/${{ steps.meta.outputs.week }}
           if-no-files-found: ignore
