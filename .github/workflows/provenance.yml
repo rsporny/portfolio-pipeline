@@ -1,9 +1,9 @@
 name: Verify provenance
 
-# An integrity gate: recompute every leaf from the published entries, verify the
-# GPG signatures against the committed public key, and check the merkle root — all
-# OFFLINE. No signing secret, no chain: this proves the committed transparency log
-# is internally consistent with the content it claims to cover.
+# An integrity gate: recompute each entry's sha256 from the published file and
+# verify its GPG signature against the committed public key — all OFFLINE. No
+# signing secret, no chain: this proves the committed ledger is internally
+# consistent with the content it claims to cover.
 on:
   workflow_dispatch:
 

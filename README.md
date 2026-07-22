@@ -122,29 +122,39 @@ fork-PR workflows, and this one does not run on them at all).
 ## Provenance: verify it yourself (v0.5)
 
 Every published entry can be checked two ways — **who** wrote it and **when** it
-existed — by anyone, with only public material.
+existed — by anyone, with only public material and off-the-shelf tools. Each entry
+is an **independent** proof: one file, one hash, one transaction — no merkle tree,
+no bundle to download.
 
-- **Signed entries.** Before merging a devlog PR I GPG-sign the *merged* entry
-  (my YubiKey, on the PR branch) — so the signature ships in the same PR and **no
-  signing key is ever in CI**. The canonical hash covers only
-  `{slug, title, published_at, type, series, body}`, so the badge and sidecar
-  can't invalidate it.
-- **A merkle transparency log.** Each signed entry is a leaf in an append-only log
-  (`provenance/log.jsonl`); a cumulative [RFC 6962](https://datatracker.ietf.org/doc/html/rfc6962)
-  root lives in `provenance/root.json`, giving per-entry inclusion proofs.
-- **Anchored (testnet).** The current root can be timestamped in a Cardano testnet
-  transaction's metadata (a pluggable backend — `null` by default, `file` for dev,
-  or `cardano`). Signatures are per-entry; the anchor is cumulative and periodic.
+- **The hash is the file.** An entry's commitment is the plain `sha256` of its raw
+  `<slug>.md`, exactly as served — so `sha256sum` reproduces it. Provenance is kept
+  out of the `.md` (in the manifest + the sidecar) precisely so the file's bytes
+  stay the hash.
+- **Signed entries.** Before merging a devlog PR I GPG-sign that raw file (my
+  YubiKey, on the PR branch) — the signature ships in the same PR and **no signing
+  key is ever in CI**. Because the signature is over the file itself, plain
+  `gpg --verify` checks it.
+- **Anchored per entry (testnet).** Each entry's hash is written into a Cardano
+  testnet transaction's metadata (`{slug, sha256, v}`) — a pluggable backend
+  (`null` by default, `file` for dev, or `cardano`). Open the transaction and you
+  see the same hash.
 
-To check it, with only the committed public key:
+Check it with universal tools — no clone, no Python:
 
 ```bash
-pipeline provenance verify           # recompute every leaf + signature + the root (offline)
-pipeline provenance verify --chain   # also read each anchor back from the chain
-pipeline provenance show --slug 2026-W27   # leaf hash, signature, inclusion proof, anchors
+curl -s https://sporny.pl/content/devlog/2026-W27.md | sha256sum   # == the hash in the tx
+gpg --import pubkey.asc && gpg --verify 2026-W27.md.sig 2026-W27.md # who signed it
 ```
 
-`verify` recomputes each leaf from the *actual* published entry, so a post-hoc
+Or use the engine's own checker, with only the committed public key:
+
+```bash
+pipeline provenance verify           # recompute every file hash + signature (offline)
+pipeline provenance verify --chain   # also read each anchor back from the chain
+pipeline provenance show --slug 2026-W27   # file hash, signature, anchor
+```
+
+`verify` recomputes each hash from the *actual* published file, so a post-hoc
 edit fails loudly. `.github/workflows/provenance.yml` runs it **offline, with no
 secrets** as an integrity gate. The engine never anchors mainnet, never merges,
 and never publishes — provenance only adds proof to what a human already reviewed.

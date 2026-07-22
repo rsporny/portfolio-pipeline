@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from ..config import Config
+from ..provenance.log import Anchor
 from ..provenance.proof import EntryProof
 
 # The pipeline core knows only this interface. All knowledge about a specific
@@ -70,7 +71,14 @@ class SiteAdapter(Protocol):
         self, slug: str, proof: EntryProof, ctx: RenderContext
     ) -> list[FileChange]:
         """Render provenance for an already-published entry (v0.5): the signature
-        sidecar, the entry's ``provenance:`` front matter, and the regenerated
-        manifest carrying the verify-badge fields. A fork that doesn't surface
+        sidecar, the public key, and the regenerated manifest carrying the
+        verify-badge fields (hash + fingerprint). Must not modify the entry's
+        ``.md`` — its sha256 is the commitment. A fork that doesn't surface
+        provenance may return ``[]``."""
+        ...
+
+    def attach_anchor(self, slug: str, anchor: Anchor, ctx: RenderContext) -> list[FileChange]:
+        """Record an entry's on-chain anchor (network + tx id) in the manifest
+        badge, on top of the sign-time fields. A fork that doesn't surface
         provenance may return ``[]``."""
         ...
