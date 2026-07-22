@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "portfolio-pipeline"
-version = "0.4.1"
+version = "0.5.0"
 description = "Automated commit-to-content pipeline"
 requires-python = ">=3.11"
 dependencies = [
@@ -14,6 +14,12 @@ dependencies = [
     "pydantic>=2.7",
     "pyyaml>=6.0",
 ]
+
+[project.optional-dependencies]
+# v0.5 provenance: anchoring the merkle root on Cardano testnet. Optional — the
+# provenance core (hash/sign/merkle/verify) and the null/file backends need none
+# of this; only the `cardano` anchor backend imports pycardano, and lazily.
+cardano = ["pycardano>=0.11"]
 
 [project.scripts]
 pipeline = "pipeline.cli:app"

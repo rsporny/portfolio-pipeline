@@ -1,0 +1,39 @@
+name: Verify provenance
+
+# An integrity gate: recompute every leaf from the published entries, verify the
+# GPG signatures against the committed public key, and check the merkle root — all
+# OFFLINE. No signing secret, no chain: this proves the committed transparency log
+# is internally consistent with the content it claims to cover.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      PIPELINE: ${{ github.workspace }}/.venv/bin/pipeline
+    steps:
+      - name: Checkout engine
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install engine
+        run: uv sync
+
+      - name: Checkout instance (config + state + content)
+        uses: actions/checkout@v4
+        with:
+          repository: rsporny/landing-page
+          token: ${{ secrets.LANDING_PAGE_TOKEN }}
+          path: site
+
+      - name: Verify provenance (offline, no signing secret)
+        working-directory: site
+        run: "$PIPELINE" provenance verify

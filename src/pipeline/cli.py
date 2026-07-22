@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 import logging
 import sys
 from collections.abc import Callable
+from dataclasses import asdict
 from pathlib import Path
 
 import typer
@@ -21,8 +23,17 @@ from .github import GitHubClient
 from .llm import LLMClient, TransformError
 from .memory import Thread
 from .models import Activity
-from .publish import PublishError, publish_approved, publish_custom
+from .provenance import log as plog
+from .provenance import merkle
+from .provenance import verify as pverify
+from .provenance.anchor import AnchorError, get_anchor_backend, receipt_filename
+from .provenance.canonical import CanonicalEntry
+from .provenance.log import Anchor
+from .provenance.sign import GpgError, gpg_signer, pubkey_verifier, sign_entry
+from .provenance.sign import fingerprint as gpg_fingerprint
+from .publish import PublishError, _resolve_site_dir, publish_approved, publish_custom
 from .review import list_drafts
+from .site_adapter import RenderContext, get_adapter
 from .transform import transform_week
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
@@ -259,3 +270,182 @@ def eval_cmd(
     if has_errors(cases):
         typer.echo("Eval failed: error-severity check failure(s).", err=True)
         raise typer.Exit(1)
+
+
+# --- provenance (v0.5): sign entries, anchor the root, verify ----------------
+
+provenance_app = typer.Typer(
+    help="Provenance: sign published entries, anchor the merkle root, and verify."
+)
+app.add_typer(provenance_app, name="provenance")
+
+WEEK_PROV_OPTION = typer.Option(None, "--week", help="Weekly entry slug (YYYY-Wnn)")
+SLUG_PROV_OPTION = typer.Option(None, "--slug", help="Entry slug (weekly or custom)")
+CHAIN_OPTION = typer.Option(False, "--chain", help="Also read anchors back from the chain")
+BACKEND_OPTION = typer.Option(None, "--backend", help="Override provenance.anchor.backend")
+
+
+def _resolve_slug(week: str | None, slug: str | None) -> str:
+    chosen = slug or week
+    if not chosen:
+        typer.echo("provide --slug or --week", err=True)
+        raise typer.Exit(1)
+    return chosen
+
+
+def _anchor_fetcher(cfg: Config, prov_dir: Path):
+    def fetch(anchor: Anchor) -> bytes | None:
+        backend = get_anchor_backend(
+            anchor.backend,
+            anchors_dir=prov_dir / "anchors",
+            metadata_label=cfg.provenance.anchor.metadata_label,
+        )
+        return backend.fetch(anchor.tx_id, network=anchor.network)
+
+    return fetch
+
+
+@provenance_app.command("sign")
+def provenance_sign(
+    week: str | None = WEEK_PROV_OPTION,
+    slug: str | None = SLUG_PROV_OPTION,
+    config: str = CONFIG_OPTION,
+    site_repo: str | None = SITE_REPO_OPTION,
+) -> None:
+    """Sign a published entry with GPG (run on the PR branch, before merge): write
+    the signature sidecar + provenance front matter via the adapter, and record
+    the leaf in the transparency log."""
+    cfg = load_config(config)
+    key = cfg.provenance.signing.gpg_key
+    if not key:
+        typer.echo("set provenance.signing.gpg_key in config", err=True)
+        raise typer.Exit(1)
+    entry_slug = _resolve_slug(week, slug)
+    try:
+        site_dir = _resolve_site_dir(cfg, site_repo)
+    except PublishError as exc:
+        typer.echo(f"sign failed: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    md_path = site_dir / f"{entry_slug}.md"
+    if not md_path.exists():
+        typer.echo(f"no published entry at {md_path}", err=True)
+        raise typer.Exit(1)
+
+    entry = CanonicalEntry.from_markdown(md_path.read_text())
+    prov_dir = cfg.state_dir("provenance")
+    try:
+        proof = sign_entry(
+            prov_dir, entry, signer=gpg_signer(key), fingerprint=gpg_fingerprint(key)
+        )
+    except GpgError as exc:
+        typer.echo(f"signing failed: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    ctx = RenderContext(site_dir=site_dir, config=cfg)
+    for change in get_adapter(cfg.output.adapter).attach_provenance(entry_slug, proof, ctx):
+        change.path.write_text(change.content)
+
+    typer.echo(f"Signed {entry_slug} → {proof.sig_filename} (leaf {proof.leaf_sha256[:12]}…)")
+    typer.echo(
+        "Commit the entry, its .sig, index.json, and provenance/ on the PR branch, then merge."
+    )
+
+
+@provenance_app.command("anchor")
+def provenance_anchor(
+    backend: str | None = BACKEND_OPTION,
+    config: str = CONFIG_OPTION,
+) -> None:
+    """Anchor the current merkle root via the configured backend (default off)."""
+    cfg = load_config(config)
+    prov_dir = cfg.state_dir("provenance")
+    root = plog.load_root(prov_dir)
+    if root is None:
+        typer.echo("nothing to anchor — sign an entry first", err=True)
+        raise typer.Exit(1)
+
+    anchors_dir = prov_dir / "anchors"
+    name = backend or cfg.provenance.anchor.backend
+    try:
+        be = get_anchor_backend(
+            name, anchors_dir=anchors_dir, metadata_label=cfg.provenance.anchor.metadata_label
+        )
+        receipt = be.anchor(
+            bytes.fromhex(root.root),
+            network=cfg.provenance.anchor.network,
+            tree_size=root.tree_size,
+        )
+    except AnchorError as exc:
+        typer.echo(f"anchor failed: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    anchors_dir.mkdir(parents=True, exist_ok=True)
+    (anchors_dir / receipt_filename(receipt.tx_id)).write_text(
+        json.dumps(asdict(receipt), indent=2) + "\n"
+    )
+    plog.add_anchor(prov_dir, Anchor(**asdict(receipt)))
+    typer.echo(f"Anchored root {root.root[:12]}… via {receipt.backend} → {receipt.tx_id}")
+
+
+@provenance_app.command("verify")
+def provenance_verify(
+    chain: bool = CHAIN_OPTION,
+    config: str = CONFIG_OPTION,
+    site_repo: str | None = SITE_REPO_OPTION,
+) -> None:
+    """Verify every leaf's content + signature, the merkle root, and (with
+    ``--chain``) the on-chain anchors. Exits non-zero on any failure."""
+    cfg = load_config(config)
+    prov_dir = cfg.state_dir("provenance")
+    try:
+        site_dir = _resolve_site_dir(cfg, site_repo)
+    except PublishError as exc:
+        typer.echo(f"verify failed: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    pubkey_path = cfg.state.root_path / cfg.provenance.public_key
+    if not pubkey_path.exists():
+        typer.echo(f"public key not found: {pubkey_path}", err=True)
+        raise typer.Exit(1)
+
+    report = pverify.verify_all(
+        prov_dir,
+        site_dir,
+        verifier=pubkey_verifier(pubkey_path.read_text()),
+        anchor_fetch=_anchor_fetcher(cfg, prov_dir) if chain else None,
+    )
+    typer.echo(pverify.render(report))
+    if not report.ok:
+        raise typer.Exit(1)
+
+
+@provenance_app.command("show")
+def provenance_show(
+    slug: str | None = SLUG_PROV_OPTION,
+    config: str = CONFIG_OPTION,
+) -> None:
+    """Print each entry's leaf hash, signature, inclusion proof, and the anchors."""
+    cfg = load_config(config)
+    prov_dir = cfg.state_dir("provenance")
+    records = plog.load_log(prov_dir)
+    if not records:
+        typer.echo("transparency log is empty (no signed entries yet).")
+        return
+
+    chosen = [r for r in records if r.slug == slug] if slug else records
+    if slug and not chosen:
+        typer.echo(f"no leaf for slug {slug!r}", err=True)
+        raise typer.Exit(1)
+
+    leaves = [bytes.fromhex(r.leaf_sha256) for r in records]
+    for r in chosen:
+        proof = merkle.inclusion_proof(leaves, r.leaf_index) if len(leaves) > 1 else []
+        typer.echo(f"{r.slug}  index={r.leaf_index}  leaf={r.leaf_sha256}")
+        typer.echo(f"  sig:   {r.sig}")
+        typer.echo(f"  proof: {[p.hex() for p in proof]}")
+
+    root = plog.load_root(prov_dir)
+    if root:
+        typer.echo(f"root: {root.root}  size={root.tree_size}")
+        for a in root.anchors:
+            typer.echo(f"  anchor {a.backend}/{a.network}: {a.tx_id} (root {a.root[:12]}…)")

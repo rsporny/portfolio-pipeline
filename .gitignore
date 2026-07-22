@@ -12,9 +12,11 @@ build/
 # Instance state lives with the instance (the site repo) under state.root, never
 # in the engine. Since v0.4.1 the tool ships stateless: if the engine is run from
 # a checkout of this repo, these dirs are created at runtime and stay untracked.
-raw/
-memory/
-provenance/
-drafts/
-approved/
-published/
+# Root-anchored so they never shadow same-named source dirs (e.g. the
+# src/pipeline/provenance/ package).
+/raw/
+/memory/
+/provenance/
+/drafts/
+/approved/
+/published/
