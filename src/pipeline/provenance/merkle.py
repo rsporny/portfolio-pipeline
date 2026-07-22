@@ -63,9 +63,7 @@ def inclusion_proof(leaves: list[bytes], index: int) -> list[bytes]:
     return inclusion_proof(leaves[k:], index - k) + [build_root(leaves[:k])]
 
 
-def verify_proof(
-    leaf: bytes, index: int, tree_size: int, proof: list[bytes], root: bytes
-) -> bool:
+def verify_proof(leaf: bytes, index: int, tree_size: int, proof: list[bytes], root: bytes) -> bool:
     """Recompute the root from a leaf hash ``d`` and its audit path (RFC 6962
     §2.1.1 verification) and compare it to ``root``."""
     if not 0 <= index < tree_size:

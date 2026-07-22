@@ -54,11 +54,7 @@ class VerifyReport:
 
     @property
     def ok(self) -> bool:
-        return (
-            self.root_ok
-            and all(c.ok for c in self.leaves)
-            and all(a.ok for a in self.anchors)
-        )
+        return self.root_ok and all(c.ok for c in self.leaves) and all(a.ok for a in self.anchors)
 
 
 def _site_reader(site_dir: Path) -> EntryReader:
@@ -118,9 +114,7 @@ def verify_all(
                 elif onchain.hex() == anchor.root:
                     report.anchors.append(AnchorCheck(anchor.tx_id, True))
                 else:
-                    report.anchors.append(
-                        AnchorCheck(anchor.tx_id, False, "on-chain root differs")
-                    )
+                    report.anchors.append(AnchorCheck(anchor.tx_id, False, "on-chain root differs"))
 
     return report
 
@@ -131,8 +125,10 @@ def render(report: VerifyReport) -> str:
     for c in report.leaves:
         mark = "✓" if c.ok else "✗"
         extra = f" — {c.detail}" if c.detail else ""
-        lines.append(f"- {mark} {c.slug} (content {'ok' if c.content_ok else 'BAD'}, "
-                     f"signature {'ok' if c.signature_ok else 'BAD'}){extra}")
+        lines.append(
+            f"- {mark} {c.slug} (content {'ok' if c.content_ok else 'BAD'}, "
+            f"signature {'ok' if c.signature_ok else 'BAD'}){extra}"
+        )
     root_mark = "✓" if report.root_ok else "✗"
     lines.append(f"- {root_mark} merkle root{'' if report.root_ok else ' — ' + report.root_detail}")
     for a in report.anchors:
