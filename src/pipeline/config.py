@@ -77,8 +77,8 @@ class ProvenanceAnchorConfig(BaseModel):
 
 
 class ProvenanceConfig(BaseModel):
-    # v0.5: signed entries + a merkle transparency log anchored on-chain. Absent
-    # or disabled ⇒ dormant; the pipeline behaves exactly as before.
+    # v0.5: signed entries + a per-entry transparency ledger, each hash anchored
+    # on-chain. Absent or disabled ⇒ dormant; the pipeline behaves as before.
     enabled: bool = False
     public_key: str = "provenance/pubkey.asc"  # armored pubkey, relative to state.root
     signing: ProvenanceSigningConfig = ProvenanceSigningConfig()

@@ -1,19 +1,17 @@
-"""Provenance (v0.5): signed entries + a cumulative merkle transparency log,
-whose root is anchored on-chain.
+"""Provenance (v0.5): signed entries + a per-entry transparency ledger, each
+entry's hash anchored on-chain independently.
 
 Layering:
 
-- :mod:`canonical` turns a published devlog entry into stable bytes and a
-  domain-separated leaf hash — the per-entry content commitment.
-- :mod:`merkle` builds an RFC 6962 tree over those leaf hashes, with inclusion
-  proofs, so a single entry can be proven against one anchored root.
-- :mod:`log` is the append-only transparency log (``provenance/log.jsonl`` +
-  ``root.json``) under ``state.root``.
+- :mod:`content` hashes a published devlog entry as the plain ``sha256`` of its
+  raw ``<slug>.md`` bytes — reproducible with ``sha256sum`` and ``gpg --verify``.
+- :mod:`log` is the append-only ledger (``provenance/log.jsonl``) under
+  ``state.root``: one record per entry, with its hash, signature, and anchor.
 - :mod:`sign` wraps detached GPG signing/verification (injectable for tests).
 - :mod:`anchor` is a pluggable backend (null / file / Cardano testnet) that
-  timestamps the current root.
-- :mod:`verify` recomputes leaves, checks signatures + the root, and optionally
-  reads the anchor back.
+  timestamps one entry's hash in a transaction.
+- :mod:`verify` recomputes each hash, checks signatures, and optionally reads the
+  anchor back — no cumulative root, no merkle proofs.
 
 Nothing here talks to the network by default; the Cardano backend is opt-in and
 lazily imported.

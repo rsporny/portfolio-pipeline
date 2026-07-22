@@ -322,14 +322,14 @@ def _proof(slug="2026-W27"):
 
     return EntryProof(
         slug=slug,
-        leaf_sha256="ab" * 32,
+        sha256="ab" * 32,
         signature="-----BEGIN PGP SIGNATURE-----\nfake\n-----END PGP SIGNATURE-----\n",
-        sig_filename=f"{slug}.sig",
+        sig_filename=f"{slug}.md.sig",
         pubkey_fingerprint="0123456789ABCDEF",
     )
 
 
-def test_attach_provenance_writes_sidecar_frontmatter_and_badge(tmp_path):
+def test_attach_provenance_writes_sidecar_and_badge(tmp_path):
     site_dir = _site(tmp_path)
     _weekly(site_dir, "2026-W27", "Wiring commits", "2026-07-06", type="weekly-activity")
 
@@ -337,22 +337,44 @@ def test_attach_provenance_writes_sidecar_frontmatter_and_badge(tmp_path):
     _apply(_adapter().attach_provenance("2026-W27", proof, _ctx(site_dir)))
 
     # sidecar written verbatim next to the entry
-    assert (site_dir / "2026-W27.sig").read_text() == proof.signature
-    # provenance front matter injected (and body preserved)
-    front, body = parse((site_dir / "2026-W27.md").read_text())
-    assert front["provenance"]["signature"] == "2026-W27.sig"
-    assert front["provenance"]["leaf_sha256"] == "ab" * 32
-    assert body.strip() == "weekly"
-    # manifest carries the badge fields
+    assert (site_dir / "2026-W27.md.sig").read_text() == proof.signature
+    # manifest carries the badge fields (hash + signer)
     entry = next(
         e for e in json.loads((site_dir / "index.json").read_text()) if e["slug"] == "2026-W27"
     )
     assert entry["signed"] is True
-    assert entry["signature"] == "2026-W27.sig"
+    assert entry["signature"] == "2026-W27.md.sig"
+    assert entry["sha256"] == "ab" * 32
     assert entry["pubkey_fingerprint"] == "0123456789ABCDEF"
 
 
-def test_provenance_leaves_hash_stable_and_other_entries_unbadged(tmp_path):
+def test_attach_provenance_never_touches_the_md(tmp_path):
+    """The .md's sha256 is the commitment, so provenance must not rewrite it."""
+    site_dir = _site(tmp_path)
+    _weekly(site_dir, "2026-W27", "Wiring commits", "2026-07-06", type="weekly-activity")
+    before = (site_dir / "2026-W27.md").read_bytes()
+    _apply(_adapter().attach_provenance("2026-W27", _proof("2026-W27"), _ctx(site_dir)))
+    assert (site_dir / "2026-W27.md").read_bytes() == before
+
+
+def test_attach_provenance_serves_pubkey_when_configured(tmp_path):
+    from pipeline.config import Config, ReposConfig, StateConfig
+
+    site_dir = _site(tmp_path)
+    _weekly(site_dir, "2026-W27", "Wiring commits", "2026-07-06", type="weekly-activity")
+    (tmp_path / "provenance").mkdir()
+    (tmp_path / "provenance" / "pubkey.asc").write_text("PUBKEY")
+    config = Config(
+        github_user="rsporny",
+        repos=ReposConfig(allowlist=["o/r"]),
+        state=StateConfig(root=str(tmp_path)),
+    )
+    ctx = RenderContext(site_dir=site_dir, config=config)
+    _apply(_adapter().attach_provenance("2026-W27", _proof("2026-W27"), ctx))
+    assert (site_dir / "pubkey.asc").read_text() == "PUBKEY"
+
+
+def test_other_entries_stay_unbadged(tmp_path):
     site_dir = _site(tmp_path)
     _weekly(site_dir, "2026-W27", "Signed one", "2026-07-06", type="weekly-activity")
     _weekly(site_dir, "2026-W28", "Unsigned one", "2026-07-13", type="weekly-activity")
@@ -364,15 +386,36 @@ def test_provenance_leaves_hash_stable_and_other_entries_unbadged(tmp_path):
     assert "signed" not in entries["2026-W28"]
 
 
-def test_attach_provenance_does_not_change_the_canonical_leaf(tmp_path):
-    """The injected provenance block must sit outside the canonical hash."""
-    from pipeline.provenance.canonical import CanonicalEntry
+def test_badge_survives_a_plain_rebuild(tmp_path):
+    """Badge fields live in the manifest, not the .md — a later manifest rebuild
+    (a plain re-publish) must carry them forward from the frozen prior manifest."""
+    site_dir = _site(tmp_path)
+    _weekly(site_dir, "2026-W27", "Signed one", "2026-07-06", type="weekly-activity")
+    _apply(_adapter().attach_provenance("2026-W27", _proof("2026-W27"), _ctx(site_dir)))
+
+    _apply([_adapter().manifest(site_dir, SERIES)])  # rebuild from disk + frozen
+    entry = next(
+        e for e in json.loads((site_dir / "index.json").read_text()) if e["slug"] == "2026-W27"
+    )
+    assert entry["signed"] is True
+    assert entry["sha256"] == "ab" * 32
+
+
+def test_attach_anchor_adds_anchor_badge(tmp_path):
+    from pipeline.provenance.log import Anchor
 
     site_dir = _site(tmp_path)
-    _weekly(
-        site_dir, "2026-W27", "Wiring commits", "2026-07-06", type="weekly-activity", series=SERIES
-    )
-    before = CanonicalEntry.from_markdown((site_dir / "2026-W27.md").read_text()).leaf_hash()
+    _weekly(site_dir, "2026-W27", "Signed one", "2026-07-06", type="weekly-activity")
     _apply(_adapter().attach_provenance("2026-W27", _proof("2026-W27"), _ctx(site_dir)))
-    after = CanonicalEntry.from_markdown((site_dir / "2026-W27.md").read_text()).leaf_hash()
-    assert before == after
+
+    anchor = Anchor(
+        backend="cardano", network="preview", tx_id="deadtx", sha256="ab" * 32, anchored_at="t"
+    )
+    _apply(_adapter().attach_anchor("2026-W27", anchor, _ctx(site_dir)))
+
+    entry = next(
+        e for e in json.loads((site_dir / "index.json").read_text()) if e["slug"] == "2026-W27"
+    )
+    assert entry["signed"] is True  # sign-time fields preserved
+    assert entry["signature"] == "2026-W27.md.sig"
+    assert entry["anchor"] == {"network": "preview", "tx_id": "deadtx"}

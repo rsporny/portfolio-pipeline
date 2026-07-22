@@ -1,4 +1,4 @@
-"""Anchor the merkle root in a Cardano **testnet** transaction's metadata.
+"""Anchor one entry's ``sha256`` in a Cardano **testnet** transaction's metadata.
 
 Opt-in and isolated: ``pycardano`` is an optional extra imported lazily (only
 here), and the two secrets are env-only (never config/logs):
@@ -57,7 +57,7 @@ class CardanoAnchorBackend:
     def __init__(self, metadata_label: int) -> None:
         self.metadata_label = metadata_label
 
-    def anchor(self, root: bytes, *, network: str, tree_size: int) -> AnchorReceipt:
+    def anchor(self, sha256: str, *, network: str, slug: str) -> AnchorReceipt:
         context_base = _context_base(network)
         project_id = _project_id()
         skey_path = os.environ.get("CARDANO_SIGNING_KEY")
@@ -87,7 +87,7 @@ class CardanoAnchorBackend:
             vkey = PaymentVerificationKey.from_signing_key(skey)
             address = Address(vkey.hash(), network=Network.TESTNET)
 
-            metadata = Metadata({self.metadata_label: {"root": root.hex(), "n": tree_size, "v": 1}})
+            metadata = Metadata({self.metadata_label: {"slug": slug, "sha256": sha256, "v": 1}})
             builder = TransactionBuilder(context)
             builder.add_input_address(address)
             builder.auxiliary_data = AuxiliaryData(metadata)
@@ -105,12 +105,11 @@ class CardanoAnchorBackend:
             backend="cardano",
             network=network,
             tx_id=tx_id,
-            root=root.hex(),
-            tree_size=tree_size,
+            sha256=sha256,
             anchored_at=datetime.now(UTC).isoformat(),
         )
 
-    def fetch(self, tx_id: str, *, network: str) -> bytes | None:
+    def fetch(self, tx_id: str, *, network: str) -> str | None:
         base = _http_base(network)
         try:
             resp = httpx.get(
@@ -124,10 +123,7 @@ class CardanoAnchorBackend:
             return None
         for item in resp.json():
             if str(item.get("label")) == str(self.metadata_label):
-                root = (item.get("json_metadata") or {}).get("root")
-                if root:
-                    try:
-                        return bytes.fromhex(root)
-                    except ValueError:
-                        return None
+                sha = (item.get("json_metadata") or {}).get("sha256")
+                if sha:
+                    return str(sha)
         return None

@@ -13,7 +13,7 @@ class EntryProof:
     """Everything a site adapter needs to render provenance for one entry."""
 
     slug: str
-    leaf_sha256: str  # hex of the domain-separated content commitment
-    signature: str  # ASCII-armored detached GPG signature
-    sig_filename: str  # e.g. "2026-W27.sig" (the sidecar name in the site dir)
+    sha256: str  # hex sha256 of the raw <slug>.md file
+    signature: str  # ASCII-armored detached GPG signature over those file bytes
+    sig_filename: str  # e.g. "2026-W27.md.sig" (the sidecar name in the site dir)
     pubkey_fingerprint: str  # who signed — for the verify badge

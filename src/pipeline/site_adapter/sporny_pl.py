@@ -5,8 +5,18 @@ import re
 from pathlib import Path
 
 from ..frontmatter import dump, parse
+from ..provenance.log import Anchor
 from ..provenance.proof import EntryProof
 from .base import DevlogEntry, FileChange, RenderContext
+
+# The provenance badge fields the manifest carries per entry. Kept here (not in
+# the entry's .md) so the published file stays byte-stable — its sha256 is the
+# commitment, and rewriting the file would change it.
+_BADGE_KEYS = ("signed", "signature", "sha256", "pubkey_fingerprint", "anchor")
+
+# The served copy of the armored public key, next to the entries under the
+# devlog dir (so readers can `gpg --import` it to check a signature).
+PUBKEY_NAME = "pubkey.asc"
 
 # The sporny.pl adapter. Everything the pipeline knows about that website — its
 # devlog file layout, the index.json manifest schema, and the per-series
@@ -46,24 +56,34 @@ class SpornyPlAdapter:
     def attach_provenance(
         self, slug: str, proof: EntryProof, ctx: RenderContext
     ) -> list[FileChange]:
-        """Render provenance onto an already-published entry: write the signature
-        sidecar next to the entry, add a ``provenance:`` block to its front matter,
-        and rebuild the manifest so the page can show a "signed · verify" badge.
-        The provenance block is outside the canonical hash, so it does not
-        invalidate the signature it records."""
-        md_path = ctx.site_dir / f"{slug}.md"
-        front, body = parse(md_path.read_text())
-        front["provenance"] = {
+        """Render provenance onto an already-published entry: write the detached
+        signature sidecar next to the entry, publish the armored public key so
+        readers can verify offline, and rebuild the manifest so the page can show a
+        "signed · verify" badge (hash + fingerprint).
+
+        Deliberately does **not** touch the entry's ``.md``: its sha256 is the
+        commitment, so the badge lives in the manifest, not the file."""
+        default_series = ctx.config.content.devlog_title_prefix
+        badge = {
+            "signed": True,
             "signature": proof.sig_filename,
-            "leaf_sha256": proof.leaf_sha256,
+            "sha256": proof.sha256,
             "pubkey_fingerprint": proof.pubkey_fingerprint,
         }
+        changes = [FileChange(ctx.site_dir / proof.sig_filename, proof.signature)]
+        pubkey_path = ctx.config.state.root_path / ctx.config.provenance.public_key
+        if pubkey_path.exists():
+            changes.append(FileChange(ctx.site_dir / PUBKEY_NAME, pubkey_path.read_text()))
+        changes.append(self._manifest(ctx.site_dir, default_series, prov_extra={slug: badge}))
+        return changes
+
+    def attach_anchor(self, slug: str, anchor: Anchor, ctx: RenderContext) -> list[FileChange]:
+        """Record an entry's on-chain anchor in the manifest badge (network + tx
+        id), merged over the sign-time fields already carried there. Rebuilds only
+        the manifest — the entry's ``.md`` is never touched."""
         default_series = ctx.config.content.devlog_title_prefix
-        return [
-            FileChange(ctx.site_dir / proof.sig_filename, proof.signature),
-            FileChange(md_path, dump(front, body)),
-            self._manifest(ctx.site_dir, default_series, extra={slug: front}),
-        ]
+        badge = {"anchor": {"network": anchor.network, "tx_id": anchor.tx_id}}
+        return [self._manifest(ctx.site_dir, default_series, prov_extra={slug: badge})]
 
     # --- front matter --------------------------------------------------------
     # The adapter composes the site file's front matter for BOTH entry kinds
@@ -88,7 +108,13 @@ class SpornyPlAdapter:
 
     # --- manifest ------------------------------------------------------------
 
-    def _manifest(self, site_dir: Path, series: str, extra: dict[str, dict]) -> FileChange:
+    def _manifest(
+        self,
+        site_dir: Path,
+        series: str,
+        extra: dict[str, dict] | None = None,
+        prov_extra: dict[str, dict] | None = None,
+    ) -> FileChange:
         """(Re)build the manifest the website reads to list entries.
 
         Each entry carries: ``type`` (``weekly-activity`` or ``custom``, from
@@ -104,13 +130,14 @@ class SpornyPlAdapter:
         Entries order by ``date`` so weekly and custom interleave chronologically."""
         manifest_path = site_dir / MANIFEST_NAME
         frozen = _load_frozen(manifest_path)
+        prov_extra = prov_extra or {}
 
         fronts: dict[str, dict] = {}
         for md in sorted(site_dir.glob("*.md")):
             front, _ = parse(md.read_text())
             if front:
                 fronts[md.stem] = front
-        fronts.update(extra)  # the entry being published wins (fresh front matter)
+        fronts.update(extra or {})  # the entry being published wins (fresh front matter)
 
         entries: list[dict] = []
         for slug in sorted(fronts):
@@ -144,20 +171,34 @@ class SpornyPlAdapter:
             }
             if front.get("kind"):
                 entry["kind"] = str(front["kind"])
-            # v0.5: surface provenance so the site can show a verify badge. The
-            # signature (a co-located sidecar) proves authenticity on its own; the
-            # on-chain anchor of the cumulative root is reached from the pipeline's
-            # public provenance/ log, not re-pushed per entry.
-            prov = front.get("provenance")
-            if isinstance(prov, dict) and prov.get("signature"):
+            # v0.5: surface provenance so the page can show a "signed · verify"
+            # badge. Badge fields live in the manifest (never in the .md, whose
+            # sha256 is the commitment): carried forward from the prior manifest
+            # and updated in place by sign (hash + fingerprint) and anchor (tx).
+            badge = _provenance_badge(frozen.get(slug, {}), prov_extra.get(slug))
+            if badge.get("signature"):
                 entry["signed"] = True
-                entry["signature"] = str(prov["signature"])
-                entry["pubkey_fingerprint"] = str(prov.get("pubkey_fingerprint", ""))
+                entry["signature"] = str(badge["signature"])
+                entry["sha256"] = str(badge.get("sha256", ""))
+                entry["pubkey_fingerprint"] = str(badge.get("pubkey_fingerprint", ""))
+                if isinstance(badge.get("anchor"), dict):
+                    entry["anchor"] = badge["anchor"]
             entries.append(entry)
 
         _assign_numbers(entries)
         entries.sort(key=lambda e: (e["date"], e["slug"]), reverse=True)
         return FileChange(manifest_path, json.dumps(entries, indent=2, ensure_ascii=False) + "\n")
+
+
+def _provenance_badge(prior: dict, override: dict | None) -> dict:
+    """The entry's provenance badge: fields carried forward from the prior
+    manifest, with any ``override`` (from a sign or anchor step) merged on top.
+    This is what keeps the badge stable across plain re-publishes, which have no
+    proof in hand."""
+    badge = {k: prior[k] for k in _BADGE_KEYS if prior.get(k) is not None}
+    if override:
+        badge.update(override)
+    return badge
 
 
 def _load_frozen(manifest_path: Path) -> dict[str, dict]:

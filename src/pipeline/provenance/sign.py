@@ -16,7 +16,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from . import log as plog
-from .canonical import CanonicalEntry
+from .content import PublishedEntry
 from .proof import EntryProof
 
 # data -> ASCII-armored detached signature.
@@ -110,17 +110,18 @@ def pubkey_verifier(pubkey: str, *, gpg: str = "gpg") -> Verifier:
 
 def sign_entry(
     prov_dir: Path | str,
-    entry: CanonicalEntry,
+    entry: PublishedEntry,
     *,
     signer: Signer,
     fingerprint: str,
     when: str | None = None,
 ) -> EntryProof:
-    """Sign ``entry``'s canonical bytes, write the authoritative sidecar under
-    ``provenance/entries/<slug>.sig``, record/refresh its leaf, and return the
-    neutral :class:`EntryProof` for the adapter to render onto the site."""
-    signature = signer(entry.to_bytes())
-    sig_name = f"{entry.slug}.sig"
+    """Sign the entry's raw ``<slug>.md`` bytes, write the authoritative sidecar
+    under ``provenance/entries/<slug>.md.sig``, record/refresh its ledger entry,
+    and return the neutral :class:`EntryProof` for the adapter to render onto the
+    site. Signing the file itself means ``gpg --verify`` works with stock gpg."""
+    signature = signer(entry.data)
+    sig_name = f"{entry.slug}.md.sig"
     entries_dir = Path(prov_dir) / ENTRIES_SUBDIR
     entries_dir.mkdir(parents=True, exist_ok=True)
     (entries_dir / sig_name).write_text(signature)
@@ -129,7 +130,7 @@ def sign_entry(
 
     return EntryProof(
         slug=entry.slug,
-        leaf_sha256=entry.leaf_hex(),
+        sha256=entry.sha256,
         signature=signature,
         sig_filename=sig_name,
         pubkey_fingerprint=fingerprint,
