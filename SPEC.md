@@ -227,6 +227,22 @@ GitHub Actions `.github/workflows/weekly.yml`:
 
 The local `review` / `publish` commands remain for manual/offline operation; `publish --site-repo <path>` targets a checked-out copy of the website through the same code path.
 
+## Module 6: Provenance (v0.5)
+
+Provenance lets anyone independently confirm two things about a published entry: **who** wrote it (a signature) and **when** it existed (an on-chain timestamp). It is a **local, human, post-merge** flow — never CI — and lives entirely under `state.root/provenance/`.
+
+**What is attested.** The *merged, published* entry — the prose that actually ships — read back from the site repo, not the pipeline draft (which may have been edited in the PR). Each entry is reduced to a stable **canonical form**: sorted-key JSON over `{slug, title, published_at, type, series, body}`, domain-separated and SHA-256'd into a **leaf hash**. The subset deliberately excludes the injected `provenance:` block, `status`, `kind`, and manifest-derived fields, so attaching the signature/badge does **not** change the hash.
+
+**Signed entries.** Signing is a deliberate GPG act (the owner's YubiKey) performed on the devlog PR branch, just before merge — so the signature ships in the same PR as the content and **no signing key ever enters CI**. `pipeline provenance sign` writes the authoritative detached signature to `provenance/entries/<slug>.sig`, records the leaf, and asks the configured site adapter to render provenance onto the site: a co-located `.sig` sidecar, a `provenance:` front-matter block, and a manifest rebuilt with verify-badge fields. Signing works for weekly and custom entries alike.
+
+**Transparency log + merkle root.** Every signed entry is one leaf in an append-only log (`provenance/log.jsonl`, idempotent by slug: re-signing an edited entry updates its leaf in place). A cumulative **merkle root** (RFC 6962) over all leaves is kept in `provenance/root.json`, so a single anchored root commits to the whole history and yields per-entry inclusion proofs. Signatures are per-entry (they ship in the entry's PR); anchoring is cumulative and periodic.
+
+**Anchoring (pluggable, testnet).** `pipeline provenance anchor` timestamps the current root through a backend selected by `provenance.anchor.backend`: `null` (default — anchors nothing, stays offline), `file` (a local receipt, for dev), or `cardano` (a metadata transaction on a Cardano **testnet** — `preview`/`preprod` — via the optional `pycardano` extra + `BLOCKFROST_PROJECT_ID`/`CARDANO_SIGNING_KEY`, env-only). Each anchor appends a receipt to `root.json` and `provenance/anchors/<txid>.json`. Mainnet is out of scope for v0.5.
+
+**Verification.** `pipeline provenance verify` recomputes every leaf from the actual published entries (catching any post-hoc edit), verifies each signature against the committed public key (`provenance/pubkey.asc`) in an ephemeral keyring, and recomputes the merkle root; `--chain` additionally reads each anchor back and compares. It exits non-zero on any failure. `provenance.yml` runs this **offline, with no secrets** as an integrity gate. The engine never anchors mainnet, never merges, and never publishes — provenance only adds proof to what a human already reviewed and merged.
+
+**Interfaces.** The provenance core is site-neutral: signing produces a neutral `EntryProof`, and the adapter's new `attach_provenance(slug, proof, ctx) -> list[FileChange]` decides how (or whether) to surface it — all site-shape decisions stay inside `site_adapter/`, exactly like `render`. The anchor backend is resolved by name (`get_anchor_backend`), mirroring `get_adapter`; supporting another chain is a new backend.
+
 ## Tests (pytest)
 
 - collector: GitHub API response parsing (fixtures), author/time-window filtering, allowlist enforcement (repo not listed → skipped + warning).
@@ -270,7 +286,7 @@ Public, building-in-public repo. Must include: data-flow diagram, the human-in-t
 
 - **v0.3** ✅ *shipped* — selective deep context: review comments and linked issues fetched only for PRs in repos with an active thread; third-party input used for understanding only, never quoted (policy above already applies). Sub-issue parent/child graph deferred.
 - **v0.4** ✅ *shipped* — eval suite for the transformer: golden examples, property assertions (valid JSON, content-policy compliance, word limits, faithfulness to activity), run in CI on every prompt/model change, results published.
-- **v0.5** — provenance: signed entries + weekly hash anchoring (merkle root) on Cardano.
+- **v0.5** ✅ *shipped* — provenance: signed entries + a cumulative merkle transparency log whose root is anchored on Cardano testnet. See Module 6.
 - **v1.0** — experiment: ZK-based verifiable claims about private activity (Midnight).
 
 ## Status
@@ -308,4 +324,18 @@ a single tree — the site repo — holding its own `config.yaml`, state (`raw/`
 writes nothing outside `state.root` (a test asserts this). The weekly workflow
 installs the engine and runs it against the site checkout, opening **one** PR that
 bundles the rendered devlog with its `raw/` + `memory/` state — the engine commits
-nothing back to its own repo. Next: v0.5 (see roadmap).
+nothing back to its own repo.
+
+**v0.5.0** — provenance. A new `src/pipeline/provenance/` package: `canonical`
+(a stable per-entry leaf hash over `{slug,title,published_at,type,series,body}`,
+excluding the injected provenance block so signing stays valid), `merkle` (an
+RFC 6962 tree with inclusion proofs), `log` (an append-only `provenance/log.jsonl`
++ `root.json` under `state.root`, idempotent by slug), `sign` (injectable detached
+GPG signing) and `verify` (recompute leaves + signatures + root, optional
+`--chain`). Anchoring is a pluggable backend (`null` default, `file`, and a lazy
+`cardano` testnet backend via `pycardano`+Blockfrost, an optional extra). Signing
+is a deliberate local GPG act on the PR branch before merge — **no key ever enters
+CI**; the `sporny_pl` adapter's new `attach_provenance` writes the `.sig` sidecar +
+a `provenance:` front-matter block and rebuilds the manifest with verify-badge
+fields. New `pipeline provenance sign|anchor|verify|show`; `provenance.yml` runs an
+offline, secret-free `verify` as an integrity gate. Next: v1.0 (see roadmap).

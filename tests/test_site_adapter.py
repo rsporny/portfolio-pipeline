@@ -307,3 +307,72 @@ def test_manifest_custom_kind_defaults_to_omitted(tmp_path):
     _custom(site_dir, "a-note", "A note", "2026-07-14", series=SERIES, n=1)
     entry = _manifest(site_dir)[0]
     assert "kind" not in entry
+
+
+# --- provenance rendering (v0.5) --------------------------------------------
+
+
+def _apply(changes):
+    for change in changes:
+        change.path.write_text(change.content)
+
+
+def _proof(slug="2026-W27"):
+    from pipeline.provenance.proof import EntryProof
+
+    return EntryProof(
+        slug=slug,
+        leaf_sha256="ab" * 32,
+        signature="-----BEGIN PGP SIGNATURE-----\nfake\n-----END PGP SIGNATURE-----\n",
+        sig_filename=f"{slug}.sig",
+        pubkey_fingerprint="0123456789ABCDEF",
+    )
+
+
+def test_attach_provenance_writes_sidecar_frontmatter_and_badge(tmp_path):
+    site_dir = _site(tmp_path)
+    _weekly(site_dir, "2026-W27", "Wiring commits", "2026-07-06", type="weekly-activity")
+
+    proof = _proof("2026-W27")
+    _apply(_adapter().attach_provenance("2026-W27", proof, _ctx(site_dir)))
+
+    # sidecar written verbatim next to the entry
+    assert (site_dir / "2026-W27.sig").read_text() == proof.signature
+    # provenance front matter injected (and body preserved)
+    front, body = parse((site_dir / "2026-W27.md").read_text())
+    assert front["provenance"]["signature"] == "2026-W27.sig"
+    assert front["provenance"]["leaf_sha256"] == "ab" * 32
+    assert body.strip() == "weekly"
+    # manifest carries the badge fields
+    entry = next(
+        e for e in json.loads((site_dir / "index.json").read_text()) if e["slug"] == "2026-W27"
+    )
+    assert entry["signed"] is True
+    assert entry["signature"] == "2026-W27.sig"
+    assert entry["pubkey_fingerprint"] == "0123456789ABCDEF"
+
+
+def test_provenance_leaves_hash_stable_and_other_entries_unbadged(tmp_path):
+    site_dir = _site(tmp_path)
+    _weekly(site_dir, "2026-W27", "Signed one", "2026-07-06", type="weekly-activity")
+    _weekly(site_dir, "2026-W28", "Unsigned one", "2026-07-13", type="weekly-activity")
+
+    _apply(_adapter().attach_provenance("2026-W27", _proof("2026-W27"), _ctx(site_dir)))
+
+    entries = {e["slug"]: e for e in json.loads((site_dir / "index.json").read_text())}
+    assert entries["2026-W27"].get("signed") is True
+    assert "signed" not in entries["2026-W28"]
+
+
+def test_attach_provenance_does_not_change_the_canonical_leaf(tmp_path):
+    """The injected provenance block must sit outside the canonical hash."""
+    from pipeline.provenance.canonical import CanonicalEntry
+
+    site_dir = _site(tmp_path)
+    _weekly(
+        site_dir, "2026-W27", "Wiring commits", "2026-07-06", type="weekly-activity", series=SERIES
+    )
+    before = CanonicalEntry.from_markdown((site_dir / "2026-W27.md").read_text()).leaf_hash()
+    _apply(_adapter().attach_provenance("2026-W27", _proof("2026-W27"), _ctx(site_dir)))
+    after = CanonicalEntry.from_markdown((site_dir / "2026-W27.md").read_text()).leaf_hash()
+    assert before == after

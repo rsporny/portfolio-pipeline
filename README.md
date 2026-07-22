@@ -119,6 +119,36 @@ It is the only workflow that holds `ANTHROPIC_API_KEY`, kept behind a protected
 request**, so a fork PR can never spend the key (GitHub does not pass secrets to
 fork-PR workflows, and this one does not run on them at all).
 
+## Provenance: verify it yourself (v0.5)
+
+Every published entry can be checked two ways — **who** wrote it and **when** it
+existed — by anyone, with only public material.
+
+- **Signed entries.** Before merging a devlog PR I GPG-sign the *merged* entry
+  (my YubiKey, on the PR branch) — so the signature ships in the same PR and **no
+  signing key is ever in CI**. The canonical hash covers only
+  `{slug, title, published_at, type, series, body}`, so the badge and sidecar
+  can't invalidate it.
+- **A merkle transparency log.** Each signed entry is a leaf in an append-only log
+  (`provenance/log.jsonl`); a cumulative [RFC 6962](https://datatracker.ietf.org/doc/html/rfc6962)
+  root lives in `provenance/root.json`, giving per-entry inclusion proofs.
+- **Anchored (testnet).** The current root can be timestamped in a Cardano testnet
+  transaction's metadata (a pluggable backend — `null` by default, `file` for dev,
+  or `cardano`). Signatures are per-entry; the anchor is cumulative and periodic.
+
+To check it, with only the committed public key:
+
+```bash
+pipeline provenance verify           # recompute every leaf + signature + the root (offline)
+pipeline provenance verify --chain   # also read each anchor back from the chain
+pipeline provenance show --slug 2026-W27   # leaf hash, signature, inclusion proof, anchors
+```
+
+`verify` recomputes each leaf from the *actual* published entry, so a post-hoc
+edit fails loudly. `.github/workflows/provenance.yml` runs it **offline, with no
+secrets** as an integrity gate. The engine never anchors mainnet, never merges,
+and never publishes — provenance only adds proof to what a human already reviewed.
+
 ## Quickstart
 
 ```bash

@@ -58,6 +58,26 @@ class StateConfig(BaseModel):
         return Path(self.root).expanduser()
 
 
+class ProvenanceSigningConfig(BaseModel):
+    method: str = "gpg"
+    gpg_key: str = ""  # fingerprint or uid passed to `gpg --local-user`
+
+
+class ProvenanceAnchorConfig(BaseModel):
+    backend: str = "null"  # null | file | cardano
+    network: str = "preview"  # preview | preprod (testnet only in v0.5)
+    metadata_label: int = 8272025
+
+
+class ProvenanceConfig(BaseModel):
+    # v0.5: signed entries + a merkle transparency log anchored on-chain. Absent
+    # or disabled ⇒ dormant; the pipeline behaves exactly as before.
+    enabled: bool = False
+    public_key: str = "provenance/pubkey.asc"  # armored pubkey, relative to state.root
+    signing: ProvenanceSigningConfig = ProvenanceSigningConfig()
+    anchor: ProvenanceAnchorConfig = ProvenanceAnchorConfig()
+
+
 class ReposConfig(BaseModel):
     allowlist: list[str]
     # Optional per-repo domain context, used to categorize and generalize the
@@ -81,6 +101,7 @@ class Config(BaseModel):
     locale: LocaleConfig = LocaleConfig()
     content: ContentConfig = ContentConfig()
     state: StateConfig = StateConfig()
+    provenance: ProvenanceConfig = ProvenanceConfig()
 
     def state_dir(self, name: str) -> Path:
         """Resolve a state subdir (``raw``, ``memory``, ``drafts``, ``approved``,

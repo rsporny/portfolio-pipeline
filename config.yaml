@@ -30,3 +30,17 @@ locale:
   timezone: Europe/Warsaw
 content:
   devlog_title_prefix: Senior SDET log
+# v0.5 provenance (optional; dormant unless you sign entries). Signing is a local
+# GPG act on the PR branch before merge — no key ever enters CI. Anchoring the
+# merkle root is opt-in: default 'null' (none), 'file' (local), or 'cardano'
+# (testnet; needs the `cardano` extra + BLOCKFROST_PROJECT_ID / CARDANO_SIGNING_KEY).
+provenance:
+  enabled: false
+  public_key: provenance/pubkey.asc     # armored, resolved under state.root
+  signing:
+    method: gpg
+    gpg_key: ""                         # your signing key fingerprint or uid
+  anchor:
+    backend: null                       # null | file | cardano
+    network: preview                    # preview | preprod (testnet only)
+    metadata_label: 8272025

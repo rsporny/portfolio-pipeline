@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from ..config import Config
+from ..provenance.proof import EntryProof
 
 # The pipeline core knows only this interface. All knowledge about a specific
 # website (its file layout, manifest schema, numbering rules) lives inside one
@@ -63,4 +64,13 @@ class SiteAdapter(Protocol):
 
     def render(self, entry: DevlogEntry, ctx: RenderContext) -> list[FileChange]:
         """The entry's markdown file plus the regenerated site manifest."""
+        ...
+
+    def attach_provenance(
+        self, slug: str, proof: EntryProof, ctx: RenderContext
+    ) -> list[FileChange]:
+        """Render provenance for an already-published entry (v0.5): the signature
+        sidecar, the entry's ``provenance:`` front matter, and the regenerated
+        manifest carrying the verify-badge fields. A fork that doesn't surface
+        provenance may return ``[]``."""
         ...

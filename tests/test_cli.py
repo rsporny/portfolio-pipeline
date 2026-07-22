@@ -78,3 +78,63 @@ def test_make_selector_with_flag_validates(monkeypatch):
     assert selector(_candidates()) == ["node-robustness"]
     with pytest.raises(typer.Exit):
         cli._make_focus_selector(["ghost"])(_candidates())
+
+
+# --- provenance sub-app wiring (v0.5) ---------------------------------------
+
+import yaml  # noqa: E402
+from typer.testing import CliRunner  # noqa: E402
+
+_runner = CliRunner()
+
+
+def _prov_config(tmp_path, **provenance):
+    cfg = {
+        "github_user": "rsporny",
+        "repos": {"allowlist": ["o/r"]},
+        "state": {"root": str(tmp_path)},
+        "output": {"site_repo_path": str(tmp_path), "site_devlog_dir": "content/devlog"},
+    }
+    if provenance:
+        cfg["provenance"] = provenance
+    path = tmp_path / "config.yaml"
+    path.write_text(yaml.safe_dump(cfg))
+    (tmp_path / "content/devlog").mkdir(parents=True)
+    return path
+
+
+def test_provenance_subapp_registered():
+    result = _runner.invoke(cli.app, ["provenance", "--help"])
+    assert result.exit_code == 0
+    for cmd in ("sign", "anchor", "verify", "show"):
+        assert cmd in result.output
+
+
+def test_provenance_anchor_without_log_errors(tmp_path):
+    cfg = _prov_config(tmp_path)
+    result = _runner.invoke(cli.app, ["provenance", "anchor", "--config", str(cfg)])
+    assert result.exit_code == 1
+    assert "nothing to anchor" in result.output
+
+
+def test_provenance_show_empty_log(tmp_path):
+    cfg = _prov_config(tmp_path)
+    result = _runner.invoke(cli.app, ["provenance", "show", "--config", str(cfg)])
+    assert result.exit_code == 0
+    assert "empty" in result.output
+
+
+def test_provenance_sign_without_key_errors(tmp_path):
+    cfg = _prov_config(tmp_path)  # no provenance.signing.gpg_key
+    result = _runner.invoke(
+        cli.app, ["provenance", "sign", "--week", "2026-W27", "--config", str(cfg)]
+    )
+    assert result.exit_code == 1
+    assert "gpg_key" in result.output
+
+
+def test_provenance_verify_missing_pubkey_errors(tmp_path):
+    cfg = _prov_config(tmp_path)
+    result = _runner.invoke(cli.app, ["provenance", "verify", "--config", str(cfg)])
+    assert result.exit_code == 1
+    assert "public key not found" in result.output

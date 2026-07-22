@@ -5,6 +5,7 @@ import re
 from pathlib import Path
 
 from ..frontmatter import dump, parse
+from ..provenance.proof import EntryProof
 from .base import DevlogEntry, FileChange, RenderContext
 
 # The sporny.pl adapter. Everything the pipeline knows about that website — its
@@ -41,6 +42,28 @@ class SpornyPlAdapter:
     def manifest(self, site_dir: Path, series: str = DEFAULT_SERIES) -> FileChange:
         """Rebuild ``index.json`` purely from the ``.md`` files already on disk."""
         return self._manifest(site_dir, series, extra={})
+
+    def attach_provenance(
+        self, slug: str, proof: EntryProof, ctx: RenderContext
+    ) -> list[FileChange]:
+        """Render provenance onto an already-published entry: write the signature
+        sidecar next to the entry, add a ``provenance:`` block to its front matter,
+        and rebuild the manifest so the page can show a "signed · verify" badge.
+        The provenance block is outside the canonical hash, so it does not
+        invalidate the signature it records."""
+        md_path = ctx.site_dir / f"{slug}.md"
+        front, body = parse(md_path.read_text())
+        front["provenance"] = {
+            "signature": proof.sig_filename,
+            "leaf_sha256": proof.leaf_sha256,
+            "pubkey_fingerprint": proof.pubkey_fingerprint,
+        }
+        default_series = ctx.config.content.devlog_title_prefix
+        return [
+            FileChange(ctx.site_dir / proof.sig_filename, proof.signature),
+            FileChange(md_path, dump(front, body)),
+            self._manifest(ctx.site_dir, default_series, extra={slug: front}),
+        ]
 
     # --- front matter --------------------------------------------------------
     # The adapter composes the site file's front matter for BOTH entry kinds
@@ -121,6 +144,15 @@ class SpornyPlAdapter:
             }
             if front.get("kind"):
                 entry["kind"] = str(front["kind"])
+            # v0.5: surface provenance so the site can show a verify badge. The
+            # signature (a co-located sidecar) proves authenticity on its own; the
+            # on-chain anchor of the cumulative root is reached from the pipeline's
+            # public provenance/ log, not re-pushed per entry.
+            prov = front.get("provenance")
+            if isinstance(prov, dict) and prov.get("signature"):
+                entry["signed"] = True
+                entry["signature"] = str(prov["signature"])
+                entry["pubkey_fingerprint"] = str(prov.get("pubkey_fingerprint", ""))
             entries.append(entry)
 
         _assign_numbers(entries)
