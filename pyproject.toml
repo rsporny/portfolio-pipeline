@@ -19,7 +19,10 @@ dependencies = [
 # v0.5 provenance: anchoring the merkle root on Cardano testnet. Optional — the
 # provenance core (hash/sign/merkle/verify) and the null/file backends need none
 # of this; only the `cardano` anchor backend imports pycardano, and lazily.
-cardano = ["pycardano>=0.11"]
+# cbor2<6 is an upper bound pycardano omits: it declares `cbor2>=5.6.5` with no
+# cap, but cbor2 6.0 removed names pycardano/cbor2pure still import (FrozenDict,
+# CBORDecodeValueError), so an unconstrained resolve breaks at import.
+cardano = ["pycardano>=0.11", "cbor2<6"]
 
 [project.scripts]
 pipeline = "pipeline.cli:app"
