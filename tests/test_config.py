@@ -63,6 +63,13 @@ def test_output_site_repo_expands_tilde(config_file):
     assert not str(cfg.output.site_repo).startswith("~")
 
 
+def test_provenance_anchor_backend_yaml_null_coerces_to_string(config_file):
+    # `backend: null` in YAML parses to None; the model must accept it as "null".
+    data = {**MINIMAL, "provenance": {"anchor": {"backend": None}}}
+    cfg = load_config(config_file(data))
+    assert cfg.provenance.anchor.backend == "null"
+
+
 def test_multiple_repos_on_allowlist(config_file):
     data = {
         **MINIMAL,
