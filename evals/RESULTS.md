@@ -1,8 +1,8 @@
 # Eval results
 
 - Model: `claude-opus-4-8`
-- Commit: `374f4a0`
-- Generated: 2026-07-21T09:10:08.223692+00:00
+- Commit: `a780ef2`
+- Generated: 2026-07-22T12:14:10.761380+00:00
 - Cases: 4 (0 blocked) | error-severity failures: 0 | warnings: 3
 
 | check | baseline | continuity | deep-context | focus |
