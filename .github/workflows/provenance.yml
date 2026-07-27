@@ -36,4 +36,4 @@ jobs:
 
       - name: Verify provenance (offline, no signing secret)
         working-directory: site
-        run: "$PIPELINE" provenance verify
+        run: $PIPELINE provenance verify
