@@ -332,6 +332,14 @@ def test_transform_week_writes_all_drafts(tmp_path):
     assert "#1" not in devlog
     assert "Collector" in devlog  # source_initiatives front matter
     assert "This week I built the collector." in devlog
+    # `topics:` block: per-section title/category/repo (repo derived from links),
+    # parseable back out as structured YAML for the site's category dividers.
+    from pipeline.frontmatter import parse as _parse
+
+    front, _ = _parse(devlog)
+    assert front["topics"] == [
+        {"title": "Collector", "category": "Developer tooling", "repo": "o/r"}
+    ]
 
     social = (out_dir / "social.md").read_text()
     assert "This week I shipped a collector." in social
@@ -892,3 +900,58 @@ def test_focus_directive_restricts_and_asks_per_topic_proof(tmp_path):
     assert "own proof-of-work link" in stage_b
     assert "not listed here" in stage_b
     assert "separate things done this week" in stage_b
+
+
+# --- topics: front matter (category dividers) -------------------------------
+
+
+def test_repo_from_links_takes_first_github_owner_repo():
+    from pipeline.transform import _repo_from_links
+
+    assert _repo_from_links(["https://github.com/midnightntwrk/midnight-node/pull/1"]) == (
+        "midnightntwrk/midnight-node"
+    )
+    # Non-GitHub links are skipped; the first GitHub one wins.
+    mixed = ["https://example.com/x", "https://github.com/a/b/commit/deadbeef"]
+    assert _repo_from_links(mixed) == "a/b"
+    assert _repo_from_links([]) == ""
+    assert _repo_from_links(["https://example.com/no-repo"]) == ""
+
+
+def test_topics_omits_missing_category_and_repo():
+    from pipeline.models import Initiative, Initiatives
+    from pipeline.transform import _topics
+
+    inits = Initiatives(
+        initiatives=[
+            Initiative(
+                name="Signed feed",
+                category="automation",
+                what="w",
+                why_it_matters="y",
+                links=["https://github.com/rsporny/portfolio-pipeline/pull/6"],
+            ),
+            Initiative(name="Uncategorized", category="", what="w", why_it_matters="y", links=[]),
+        ]
+    )
+    assert _topics(inits) == [
+        {"title": "Signed feed", "category": "automation", "repo": "rsporny/portfolio-pipeline"},
+        {"title": "Uncategorized"},  # no category, no derivable repo
+    ]
+
+
+def test_front_matter_topics_roundtrips_as_yaml():
+    from pipeline.frontmatter import parse
+    from pipeline.transform import _front_matter
+
+    topics = [{"title": "A: with colon", "category": "blockchain", "repo": "o/r"}]
+    fm = _front_matter("2026-W30", "2026-07-26T00:00:00+00:00", "t", ["A: with colon"], topics)
+    front, _ = parse(fm + "body")
+    assert front["topics"] == topics
+
+
+def test_front_matter_omits_topics_when_none():
+    from pipeline.transform import _front_matter
+
+    fm = _front_matter("2026-W30", "gen", "t", ["Only"], None)
+    assert "topics:" not in fm

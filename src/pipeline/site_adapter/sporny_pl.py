@@ -104,6 +104,10 @@ class SpornyPlAdapter:
         # transparency choice of this adapter, not a passthrough of draft state.
         if entry.meta.get("source_initiatives"):
             front["source_initiatives"] = entry.meta["source_initiatives"]
+        # Per-section category/repo tags (title/category/repo per `##` heading) for
+        # the site's dividers; dumped as block YAML the page reads back at render.
+        if entry.meta.get("topics"):
+            front["topics"] = entry.meta["topics"]
         return front
 
     # --- manifest ------------------------------------------------------------

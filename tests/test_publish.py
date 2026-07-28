@@ -91,6 +91,38 @@ def test_publish_copies_devlog_to_site_and_moves_bundle(tmp_path):
     assert len(results[0].site_files) == 1
 
 
+def test_publish_carries_topics_to_site_file(tmp_path):
+    """A `topics:` block in the approved draft front matter rides through publish
+    (draft → meta → adapter) onto the public site file, for the page's dividers."""
+    approved, published = tmp_path / "approved", tmp_path / "published"
+    site = _site(tmp_path)
+    week = "2026-W30"
+    week_dir = approved / week
+    week_dir.mkdir(parents=True)
+    topics = [
+        {"title": "Provenance", "category": "automation", "repo": "rsporny/portfolio-pipeline"},
+        {"title": "Guard", "category": "blockchain", "repo": "midnightntwrk/midnight-node"},
+    ]
+    week_dir.joinpath("devlog.md").write_text(
+        dump(
+            {
+                "title": "verifiable authorship",
+                "status": "draft",
+                "week": week,
+                "generated_at": "2026-07-26T10:00:00+00:00",
+                "source_initiatives": ["Provenance", "Guard"],
+                "topics": topics,
+            },
+            "Devlog body.",
+        )
+    )
+
+    publish_approved(_config(site), approved_dir=approved, published_dir=published)
+
+    site_front = parse((site / "content/devlog" / f"{week}.md").read_text())[0]
+    assert site_front["topics"] == topics
+
+
 def test_publish_writes_site_manifest(tmp_path):
     approved, published = tmp_path / "approved", tmp_path / "published"
     site = _site(tmp_path)
