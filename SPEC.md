@@ -156,7 +156,7 @@ Produces:
 
 Respond ONLY with JSON: `{"title", "devlog", "social", "highlights": []}`.
 
-Output: `devlog.md`, `social.md`, `highlights.md` in `drafts/YYYY-Wnn/`, each with front matter (`title`, `status: draft`, `week`, `generated_at`, `source_initiatives`).
+Output: `devlog.md`, `social.md`, `highlights.md` in `drafts/YYYY-Wnn/`, each with front matter (`title`, `status: draft`, `week`, `generated_at`, `source_initiatives`, and `topics`). `topics` is a per-section list (`title` = the `##` heading, `category` = the initiative's category, `repo` = derived from its first GitHub link) that the site renders as category dividers; category/repo are omitted when unknown.
 
 Error handling (all model calls): retry with backoff (3 attempts); JSON validation (strip ```json fences); on failure, save the raw response (workflow artifact / `_failed_raw.txt` locally) and exit with a clear error.
 
@@ -170,7 +170,7 @@ The website owns how it presents devlog entries — its file layout, front-matte
 render(entry, ctx) -> list[FileChange]
 ```
 
-- **`DevlogEntry`** — a site-neutral entry: `slug`, `title`, `body` (markdown, H1 included), `date` (YYYY-MM-DD), `type` (`weekly-activity` or `custom` — a real pipeline distinction), and `meta` (a dict for anything site- or pipeline-specific: weeklies pass `source_initiatives`; customs pass `kind` and an optional per-entry `series`). The core never hands the adapter a ready-made front-matter dict, so no producer-side (transform) decision can leak onto the published site.
+- **`DevlogEntry`** — a site-neutral entry: `slug`, `title`, `body` (markdown, H1 included), `date` (YYYY-MM-DD), `type` (`weekly-activity` or `custom` — a real pipeline distinction), and `meta` (a dict for anything site- or pipeline-specific: weeklies pass `source_initiatives` and `topics`; customs pass `kind` and an optional per-entry `series`). The core never hands the adapter a ready-made front-matter dict, so no producer-side (transform) decision can leak onto the published site.
 - **`RenderContext` (`ctx`)** — `site_dir` (the website's devlog dir) plus the pipeline `config`; the adapter reads whatever it needs from config, so no site vocabulary (e.g. "series") lives in the neutral interface.
 - **`FileChange`** — a `(path, content)` pair to write into the website checkout.
 
@@ -192,7 +192,7 @@ This is what the shipped `sporny_pl` adapter produces for sporny.pl. A fork repl
 | `date`   | `published_at` (fallback `generated_at`)      | drives ordering and the "Published" line |
 | `kind`   | front matter `kind` (custom only, optional)   | kicker label; omitted ⇒ the page defaults to `Note` |
 
-**Site file front matter.** The adapter *composes* the site `<slug>.md` front matter for both kinds from the neutral entry — `type`, `series`, `slug`, `title`, `published_at`, `status: published`, optional `kind`, and (for weeklies) `source_initiatives` surfaced from `meta` as an explicit transparency choice. Draft-only keys (`generated_at`, `week`, …) stay in the pipeline's own `published/` record and never reach the site.
+**Site file front matter.** The adapter *composes* the site `<slug>.md` front matter for both kinds from the neutral entry — `type`, `series`, `slug`, `title`, `published_at`, `status: published`, optional `kind`, and (for weeklies) `source_initiatives` and `topics` surfaced from `meta` as an explicit transparency choice. Draft-only keys (`generated_at`, `week`, …) stay in the pipeline's own `published/` record and never reach the site.
 
 **`series` per entry.** Weeklies emit the caller's configured current series (`content.devlog_title_prefix`); customs carry their own `series` (via `meta`) when the author set one. An entry's own recorded series — its front matter, or a value already in the prior manifest — always wins, so history is **never rewritten** when the owner's role/series changes.
 

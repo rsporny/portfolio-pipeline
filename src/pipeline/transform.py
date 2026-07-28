@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
@@ -316,7 +317,43 @@ def _run_checks(
     return results
 
 
-def _front_matter(week: str, generated_at: str, title: str, source_initiatives: list[str]) -> str:
+_GITHUB_REPO = re.compile(r"github\.com/([^/\s]+/[^/\s]+)")
+
+
+def _repo_from_links(links: list[str]) -> str:
+    """The ``owner/repo`` of the first GitHub link, or ``""``. The site renders this
+    as the divider's right-aligned repo label; the same URLs already appear as
+    proof-of-work links in the body, so this leaks nothing new."""
+    for link in links:
+        match = _GITHUB_REPO.search(link)
+        if match:
+            return match.group(1)
+    return ""
+
+
+def _topics(initiatives: Initiatives) -> list[dict]:
+    """Per-section (``##`` heading) metadata for the site's category dividers:
+    ``title`` (matches the heading), ``category`` (LLM-assigned), and ``repo``
+    (derived from the initiative's links). Category/repo are omitted when unknown."""
+    topics: list[dict] = []
+    for init in initiatives.initiatives:
+        topic: dict = {"title": init.name}
+        if init.category:
+            topic["category"] = init.category
+        repo = _repo_from_links(init.links)
+        if repo:
+            topic["repo"] = repo
+        topics.append(topic)
+    return topics
+
+
+def _front_matter(
+    week: str,
+    generated_at: str,
+    title: str,
+    source_initiatives: list[str],
+    topics: list[dict] | None = None,
+) -> str:
     lines = [
         "---",
         f"title: {json.dumps(title)}",
@@ -326,6 +363,16 @@ def _front_matter(week: str, generated_at: str, title: str, source_initiatives: 
         "source_initiatives:",
     ]
     lines += [f"  - {json.dumps(name)}" for name in source_initiatives]
+    # `topics:` — a valid-YAML block-sequence of maps (dash at column 0) so the
+    # site's front-matter reader picks it up; JSON-quoted values keep it safe.
+    if topics:
+        lines.append("topics:")
+        for topic in topics:
+            lines.append(f"- title: {json.dumps(topic['title'])}")
+            if topic.get("category"):
+                lines.append(f"  category: {json.dumps(topic['category'])}")
+            if topic.get("repo"):
+                lines.append(f"  repo: {json.dumps(topic['repo'])}")
     lines.append("---")
     return "\n".join(lines) + "\n\n"
 
@@ -439,7 +486,7 @@ def transform_week(
 
     generated_at = datetime.now(UTC).isoformat()
     names = [init.name for init in initiatives.initiatives]
-    front = _front_matter(week, generated_at, content.title, names)
+    front = _front_matter(week, generated_at, content.title, names, _topics(initiatives))
 
     (out_dir / "devlog.md").write_text(
         front + f"# {content.title}\n\n" + content.devlog.rstrip() + "\n"

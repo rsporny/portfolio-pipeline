@@ -118,6 +118,45 @@ def test_render_weekly_composes_clean_front_matter(tmp_path):
     assert entry_out["date"] == "2026-07-05"
 
 
+def test_render_weekly_carries_topics(tmp_path):
+    """`topics` in the neutral entry's meta is written into the site front matter as
+    block YAML — the page reads it back to draw per-section category dividers."""
+    site_dir = _site(tmp_path)
+    topics = [
+        {"title": "Provenance", "category": "automation", "repo": "rsporny/portfolio-pipeline"},
+        {"title": "Guard", "category": "blockchain", "repo": "midnightntwrk/midnight-node"},
+    ]
+    entry = DevlogEntry(
+        slug="2026-W30",
+        title="verifiable authorship",
+        body="body",
+        date="2026-07-26",
+        type="weekly-activity",
+        meta={"source_initiatives": ["Provenance", "Committee guard"], "topics": topics},
+    )
+
+    changes = _adapter().render(entry, _ctx(site_dir))
+    front, _ = parse(next(c for c in changes if c.path.name == "2026-W30.md").content)
+    assert front["topics"] == topics
+
+
+def test_render_weekly_omits_topics_when_absent(tmp_path):
+    """No `topics` in meta ⇒ no `topics` key in the front matter (graceful fallback)."""
+    site_dir = _site(tmp_path)
+    entry = DevlogEntry(
+        slug="2026-W27",
+        title="exit codes",
+        body="body",
+        date="2026-07-05",
+        type="weekly-activity",
+        meta={"source_initiatives": ["Collector"]},
+    )
+
+    changes = _adapter().render(entry, _ctx(site_dir))
+    front, _ = parse(next(c for c in changes if c.path.name == "2026-W27.md").content)
+    assert "topics" not in front
+
+
 # --- render: custom ---------------------------------------------------------
 
 

@@ -130,6 +130,9 @@ def publish_approved(
                             if front.get("source_initiatives")
                             else {}
                         )
+                        # Per-section category dividers ride along the same way.
+                        if front.get("topics"):
+                            meta["topics"] = front["topics"]
                         entry = DevlogEntry(
                             slug=week,
                             title=str(front.get("title", "")),
