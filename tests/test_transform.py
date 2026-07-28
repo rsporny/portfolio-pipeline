@@ -178,7 +178,11 @@ def _indexer(updates=None, new_threads=None):
 def _stage_b():
     data = {
         "title": "Wiring commits into a content pipeline",
-        "devlog": "This week I built the collector.",
+        "devlog": (
+            "## Collector\n\n"
+            "This week I built the collector.\n\n"
+            "Proof of work: https://github.com/o/r/pull/5"
+        ),
         "social": "This week I shipped a collector. Here's what I learned.",
         "highlights": ["Collector — 23 tests passing"],
     }
@@ -429,7 +433,7 @@ def test_transform_redacts_input_before_sending(tmp_path):
     llm = _FakeLLM([_stage_a(), _indexer(), _stage_b()])
 
     transform_week(
-        _config(forbidden=["o/r"]),
+        _config(forbidden=["Add collector"]),
         llm,
         raw_dir=raw_dir,
         drafts_dir=drafts_dir,
@@ -438,7 +442,7 @@ def test_transform_redacts_input_before_sending(tmp_path):
     )
 
     stage_a_prompt_text = llm.prompts[0]
-    assert "o/r" not in stage_a_prompt_text
+    assert "Add collector" not in stage_a_prompt_text
     assert "[REDACTED]" in stage_a_prompt_text
 
 
@@ -918,26 +922,87 @@ def test_repo_from_links_takes_first_github_owner_repo():
     assert _repo_from_links(["https://example.com/no-repo"]) == ""
 
 
-def test_topics_omits_missing_category_and_repo():
+def _inits(*specs):
     from pipeline.models import Initiative, Initiatives
-    from pipeline.transform import _topics
 
-    inits = Initiatives(
+    return Initiatives(
         initiatives=[
-            Initiative(
-                name="Signed feed",
-                category="automation",
-                what="w",
-                why_it_matters="y",
-                links=["https://github.com/rsporny/portfolio-pipeline/pull/6"],
-            ),
-            Initiative(name="Uncategorized", category="", what="w", why_it_matters="y", links=[]),
+            Initiative(name=n, category=c, what="w", why_it_matters="y", links=list(links))
+            for (n, c, *links) in specs
         ]
     )
-    assert _topics(inits) == [
-        {"title": "Signed feed", "category": "automation", "repo": "rsporny/portfolio-pipeline"},
-        {"title": "Uncategorized"},  # no category, no derivable repo
+
+
+def test_topics_title_is_the_rendered_heading_not_the_initiative_name():
+    # The bug: the site keys its dividers off the ``##`` heading text, but the model
+    # paraphrases headings away from the Stage A initiative name. ``title`` must be
+    # the heading, with category/repo joined to the initiative by its PoW link.
+    from pipeline.transform import _topics
+
+    inits = _inits(
+        (
+            "Blockchain consensus regression testing and governance tooling",
+            "Blockchain infrastructure",
+            "https://github.com/midnightntwrk/midnight-node/pull/1934",
+        ),
+    )
+    devlog = (
+        "## Governance transaction CLI for local/federated operations\n\n"
+        "Body text.\n\n"
+        "Proof of work: https://github.com/midnightntwrk/midnight-node/pull/1934\n"
+    )
+    assert _topics(inits, devlog) == [
+        {
+            "title": "Governance transaction CLI for local/federated operations",
+            "category": "Blockchain infrastructure",
+            "repo": "midnightntwrk/midnight-node",
+        }
     ]
+
+
+def test_topics_one_per_rendered_section_not_per_initiative():
+    # Fewer sections than initiatives: topics track the sections actually written.
+    from pipeline.transform import _topics
+
+    inits = _inits(
+        ("Provenance", "Cryptography", "https://github.com/rsporny/portfolio-pipeline/pull/5"),
+        ("Metadata", "Developer tooling", "https://github.com/rsporny/portfolio-pipeline/pull/7"),
+        ("Unwritten", "Other", "https://github.com/rsporny/portfolio-pipeline/pull/9"),
+    )
+    # Two same-repo sections — the exact PoW URL disambiguates their categories.
+    devlog = (
+        "## Structured metadata for content presentation\n\n"
+        "PoW: https://github.com/rsporny/portfolio-pipeline/pull/7\n\n"
+        "## Cryptographic provenance for published content\n\n"
+        "PoW: https://github.com/rsporny/portfolio-pipeline/pull/5\n"
+    )
+    assert _topics(inits, devlog) == [
+        {
+            "title": "Structured metadata for content presentation",
+            "category": "Developer tooling",
+            "repo": "rsporny/portfolio-pipeline",
+        },
+        {
+            "title": "Cryptographic provenance for published content",
+            "category": "Cryptography",
+            "repo": "rsporny/portfolio-pipeline",
+        },
+    ]
+
+
+def test_topics_omits_category_and_repo_for_unmatched_section():
+    from pipeline.transform import _topics
+
+    inits = _inits(("Signed feed", "automation", "https://github.com/rsporny/pp/pull/6"))
+    devlog = "## A heading with no proof-of-work link\n\nJust prose.\n"
+    assert _topics(inits, devlog) == [{"title": "A heading with no proof-of-work link"}]
+
+
+def test_topics_empty_for_single_flowing_entry_without_sections():
+    from pipeline.transform import _topics
+
+    inits = _inits(("Signed feed", "automation", "https://github.com/rsporny/pp/pull/6"))
+    assert _topics(inits, "A single weekly entry with no ## headings at all.\n") == []
 
 
 def test_front_matter_topics_roundtrips_as_yaml():
