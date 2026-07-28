@@ -27,7 +27,7 @@ from .memory import (
     save_registry,
     weeks_between,
 )
-from .models import Activity, Content, Initiatives
+from .models import Activity, Content, Initiative, Initiatives
 from .prompts import indexer_prompt, stage_a_prompt, stage_b_prompt
 from .redact import redact
 
@@ -318,6 +318,8 @@ def _run_checks(
 
 
 _GITHUB_REPO = re.compile(r"github\.com/([^/\s]+/[^/\s]+)")
+_SECTION_RE = re.compile(r"^##[ \t]+(.+?)[ \t]*$", re.MULTILINE)
+_URL_RE = re.compile(r"https?://\S+")
 
 
 def _repo_from_links(links: list[str]) -> str:
@@ -331,16 +333,38 @@ def _repo_from_links(links: list[str]) -> str:
     return ""
 
 
-def _topics(initiatives: Initiatives) -> list[dict]:
-    """Per-section (``##`` heading) metadata for the site's category dividers:
-    ``title`` (matches the heading), ``category`` (LLM-assigned), and ``repo``
-    (derived from the initiative's links). Category/repo are omitted when unknown."""
-    topics: list[dict] = []
+def _section_init(body: str, initiatives: Initiatives) -> Initiative | None:
+    """The initiative a rendered ``##`` section describes, joined by the
+    proof-of-work link it cites (written verbatim from the initiative's ``links``).
+    Exact-URL match first — two sections can share a repo yet differ in category, so
+    the specific link is the reliable key — then fall back to ``owner/repo``."""
+    urls = {u.rstrip(").,;:") for u in _URL_RE.findall(body)}
     for init in initiatives.initiatives:
-        topic: dict = {"title": init.name}
-        if init.category:
+        if urls & set(init.links):
+            return init
+    repos = {m.group(1) for u in urls for m in [_GITHUB_REPO.search(u)] if m}
+    for init in initiatives.initiatives:
+        if _repo_from_links(init.links) in repos and _repo_from_links(init.links):
+            return init
+    return None
+
+
+def _topics(initiatives: Initiatives, devlog: str) -> list[dict]:
+    """Per-section (``##`` heading) metadata for the site's category dividers, built
+    from the *rendered* ``devlog`` so each topic's ``title`` is exactly the heading
+    text the site keys its dividers off. Each section is joined to its initiative by
+    the proof-of-work link it cites, yielding ``category`` (LLM-assigned) and ``repo``
+    (derived from that initiative's links); both are omitted when unmatched. A devlog
+    with no ``##`` sections (a single flowing entry) has no dividers, hence no topics."""
+    topics: list[dict] = []
+    heads = list(_SECTION_RE.finditer(devlog))
+    for i, match in enumerate(heads):
+        end = heads[i + 1].start() if i + 1 < len(heads) else len(devlog)
+        init = _section_init(devlog[match.end() : end], initiatives)
+        topic: dict = {"title": match.group(1)}
+        if init and init.category:
             topic["category"] = init.category
-        repo = _repo_from_links(init.links)
+        repo = _repo_from_links(init.links) if init else ""
         if repo:
             topic["repo"] = repo
         topics.append(topic)
@@ -486,7 +510,9 @@ def transform_week(
 
     generated_at = datetime.now(UTC).isoformat()
     names = [init.name for init in initiatives.initiatives]
-    front = _front_matter(week, generated_at, content.title, names, _topics(initiatives))
+    front = _front_matter(
+        week, generated_at, content.title, names, _topics(initiatives, content.devlog)
+    )
 
     (out_dir / "devlog.md").write_text(
         front + f"# {content.title}\n\n" + content.devlog.rstrip() + "\n"
