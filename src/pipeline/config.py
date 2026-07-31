@@ -43,6 +43,9 @@ class ContentConfig(BaseModel):
     # The series identity. Weeklies emit a bare subtitle; the site manifest
     # assigns the per-series number and the site renders "Senior SDET log #N: …".
     devlog_title_prefix: str = "Senior SDET log"
+    # Published-entry continuity: how many past published entries to retrieve and
+    # feed to Stage B so arcs connect across weeks (0 disables the retrieval).
+    continuity_max_entries: int = 3
 
 
 class StateConfig(BaseModel):

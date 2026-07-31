@@ -12,6 +12,7 @@ from pydantic import BaseModel, ValidationError
 
 from .checks import CheckResult, build_context, check_content, check_initiatives, failures
 from .config import Config
+from .continuity import RelatedEntry, query_tokens_for, retrieve_related
 from .llm import LLMClient, TransformError
 from .memory import (
     Assumption,
@@ -225,6 +226,57 @@ def _render_focus(selected: list[Thread]) -> str:
     )
 
 
+def _render_published_context(entries: list[RelatedEntry]) -> str:
+    """Stage B block carrying the owner's own related past published entries — the
+    actual prose, for continuity of voice and arc across weeks (distinct from the
+    derived thread state in `_render_thread_context`). Empty when none matched."""
+    if not entries:
+        return ""
+    blocks = [
+        "Past published entries (your own earlier writing on related threads — for "
+        "continuity of voice and narrative arc; build on them, do not repeat or "
+        "contradict them, and never quote a third party):"
+    ]
+    for entry in entries:
+        heading = f'"{entry.title}"'
+        if entry.series:
+            heading = f"{entry.series} — {heading}"
+        if entry.date:
+            heading += f" ({entry.date})"
+        blocks.append(f"### {heading}\n{entry.body}")
+    return "\n\n".join(blocks)
+
+
+def _published_context(
+    config: Config,
+    site_dir: Path | None,
+    threads: list[Thread],
+    initiatives: Initiatives,
+) -> str:
+    """Retrieve the owner's related past published entries and render them for
+    Stage B. Failure-tolerant like the indexer: continuity is a nice-to-have, so
+    any error (or a missing/empty site dir) yields no context and never blocks the
+    run. Disabled when ``content.continuity_max_entries`` is 0."""
+    max_entries = config.content.continuity_max_entries
+    if max_entries <= 0:
+        return ""
+    if site_dir is None:
+        site_dir = config.output.site_repo / config.output.site_devlog_dir
+    try:
+        tokens = query_tokens_for(threads, initiatives.initiatives)
+        entries = retrieve_related(site_dir, tokens, max_entries=max_entries)
+    except Exception as exc:  # noqa: BLE001 — never let continuity abort the run
+        logger.warning("Published-entry continuity retrieval failed: %s", exc)
+        return ""
+    if entries:
+        logger.info(
+            "Continuity: feeding %d past published entr%s into Stage B",
+            len(entries),
+            "y" if len(entries) == 1 else "ies",
+        )
+    return _render_published_context(entries)
+
+
 def _write_failed(out_dir: Path, raw: str, name: str = "_failed_raw.txt") -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / name
@@ -434,12 +486,17 @@ def transform_week(
     drafts_dir: Path | str | None = None,
     week: str | None = None,
     memory_root: Path | str | None = None,
+    site_dir: Path | str | None = None,
     focus_selector: Callable[[list[Thread]], list[str]] | None = None,
     enforce_checks: bool = True,
 ) -> Path:
     """Run redaction → Stage A (memory-aware) → indexer → Stage B (thread-aware)
     and write the draft bundle for a week. Paths default to ``config.state_dir(…)``
     (``raw``/``drafts``/``memory`` under ``state.root``); tests pass explicit dirs.
+
+    ``site_dir`` (optional) is the published devlog dir scanned for published-entry
+    continuity; defaults to ``output.site_repo``/``output.site_devlog_dir``. A
+    missing dir (a fresh instance) simply yields no continuity context.
 
     ``focus_selector`` (optional) is called after the indexer with the threads
     active this week and returns the ids the entry should lead on; the caller owns
@@ -448,6 +505,7 @@ def transform_week(
     raw_dir = Path(raw_dir) if raw_dir is not None else config.state_dir("raw")
     drafts_dir = Path(drafts_dir) if drafts_dir is not None else config.state_dir("drafts")
     root = Path(memory_root) if memory_root is not None else config.state_dir("memory")
+    site_dir = Path(site_dir) if site_dir is not None else None
 
     if week:
         activity_path = raw_dir / week / "activity.json"
@@ -503,9 +561,31 @@ def transform_week(
     # The devlog number is assigned by the site adapter's manifest, not here —
     # the title is a bare subtitle and the site renders "<series> #N:".
     thread_context = _render_thread_context(initiatives, memories, due, week)
+
+    # Published-entry continuity: feed a few related PAST published entries (the
+    # actual prose, not derived memory) so arcs connect across weeks. The current
+    # threads are those active this week plus any an initiative references. The
+    # rendered prose is redacted before the call like every other model input.
+    query_threads = list(candidates)
+    seen_thread_ids = {t.id for t in query_threads}
+    for init in initiatives.initiatives:
+        ref = init.thread_ref
+        if ref is None or ref.id in seen_thread_ids:
+            continue
+        thread = _find_thread(memories, ref.id)
+        if thread is not None:
+            query_threads.append(thread)
+            seen_thread_ids.add(ref.id)
+    published_context = _published_context(config, site_dir, query_threads, initiatives)
+    published_context, n_pc = redact(published_context, phrases)
+    if n_pc:
+        logger.info("Continuity: %d phrase occurrence(s) redacted before the API call", n_pc)
+
     redacted_b, n_b = redact(initiatives.model_dump_json(indent=2), phrases)
     logger.info("Stage B: %d phrase occurrence(s) redacted before the API call", n_b)
-    content = _generate(llm, stage_b_prompt(redacted_b, thread_context, focus), Content, out_dir)
+    content = _generate(
+        llm, stage_b_prompt(redacted_b, thread_context, focus, published_context), Content, out_dir
+    )
     assert isinstance(content, Content)
 
     generated_at = datetime.now(UTC).isoformat()
