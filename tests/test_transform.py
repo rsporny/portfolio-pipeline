@@ -1020,3 +1020,118 @@ def test_front_matter_omits_topics_when_none():
 
     fm = _front_matter("2026-W30", "gen", "t", ["Only"], None)
     assert "topics:" not in fm
+
+
+# --- published-entry continuity ---------------------------------------------
+
+
+def _write_published(site_dir, slug, source_initiatives, body, *, published_at="2026-06-01"):
+    """Write a published devlog entry into a site dir (mirrors the adapter's
+    front matter: series/slug/title/published_at/status/source_initiatives)."""
+    from pipeline.frontmatter import dump
+
+    front = {
+        "type": "weekly-activity",
+        "series": "Senior SDET log",
+        "slug": slug,
+        "title": slug.replace("-", " "),
+        "published_at": published_at,
+        "status": "published",
+        "source_initiatives": list(source_initiatives),
+    }
+    site_dir.mkdir(parents=True, exist_ok=True)
+    (site_dir / f"{slug}.md").write_text(dump(front, body))
+
+
+def test_stage_b_receives_published_continuity(tmp_path):
+    """A related past published entry's prose is fed into Stage B so arcs connect
+    across weeks (matched here via the shared 'Collector' initiative name)."""
+    raw_dir, drafts_dir = tmp_path / "raw", tmp_path / "drafts"
+    site_dir = tmp_path / "content" / "devlog"
+    week = _write_activity(raw_dir)
+    _write_published(site_dir, "prior-week", ["Collector"], "MARKER earlier collector prose.")
+    llm = _FakeLLM([_stage_a(), _indexer(), _stage_b()])
+
+    transform_week(
+        _config(),
+        llm,
+        raw_dir=raw_dir,
+        drafts_dir=drafts_dir,
+        week=week,
+        memory_root=tmp_path / "memory",
+        site_dir=site_dir,
+    )
+
+    stage_b = llm.prompts[2]
+    assert "your own earlier writing on related threads" in stage_b
+    assert "MARKER earlier collector prose." in stage_b
+
+
+def test_continuity_disabled_with_zero_max_entries(tmp_path):
+    raw_dir, drafts_dir = tmp_path / "raw", tmp_path / "drafts"
+    site_dir = tmp_path / "content" / "devlog"
+    week = _write_activity(raw_dir)
+    _write_published(site_dir, "prior-week", ["Collector"], "MARKER earlier collector prose.")
+    cfg = _config()
+    cfg.content.continuity_max_entries = 0
+    llm = _FakeLLM([_stage_a(), _indexer(), _stage_b()])
+
+    transform_week(
+        cfg,
+        llm,
+        raw_dir=raw_dir,
+        drafts_dir=drafts_dir,
+        week=week,
+        memory_root=tmp_path / "memory",
+        site_dir=site_dir,
+    )
+
+    stage_b = llm.prompts[2]
+    assert "your own earlier writing on related threads" not in stage_b
+    assert "MARKER earlier collector prose." not in stage_b
+
+
+def test_missing_site_dir_does_not_break_continuity(tmp_path):
+    """A fresh instance with no published content transforms cleanly — retrieval
+    yields no context rather than erroring."""
+    raw_dir, drafts_dir = tmp_path / "raw", tmp_path / "drafts"
+    week = _write_activity(raw_dir)
+    llm = _FakeLLM([_stage_a(), _indexer(), _stage_b()])
+
+    out_dir = transform_week(
+        _config(),
+        llm,
+        raw_dir=raw_dir,
+        drafts_dir=drafts_dir,
+        week=week,
+        memory_root=tmp_path / "memory",
+        site_dir=tmp_path / "does-not-exist",
+    )
+
+    assert (out_dir / "devlog.md").exists()
+    assert "your own earlier writing on related threads" not in llm.prompts[2]
+
+
+def test_published_continuity_is_redacted_before_stage_b(tmp_path):
+    """The retrieved prose is redacted before the model call like every other
+    input (hard constraint 5) — a forbidden phrase never reaches Stage B."""
+    raw_dir, drafts_dir = tmp_path / "raw", tmp_path / "drafts"
+    site_dir = tmp_path / "content" / "devlog"
+    week = _write_activity(raw_dir)
+    _write_published(site_dir, "prior-week", ["Collector"], "The SECRET collector detail.")
+    llm = _FakeLLM([_stage_a(), _indexer(), _stage_b()])
+
+    transform_week(
+        _config(forbidden=["SECRET"]),
+        llm,
+        raw_dir=raw_dir,
+        drafts_dir=drafts_dir,
+        week=week,
+        memory_root=tmp_path / "memory",
+        site_dir=site_dir,
+    )
+
+    stage_b = llm.prompts[2]
+    assert "your own earlier writing on related threads" in stage_b
+    assert "SECRET" not in stage_b
+    assert "[REDACTED]" in stage_b

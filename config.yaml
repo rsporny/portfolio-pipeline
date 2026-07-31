@@ -30,6 +30,9 @@ locale:
   timezone: Europe/Warsaw
 content:
   devlog_title_prefix: Senior SDET log
+  # Published-entry continuity: how many related PAST published entries to feed
+  # Stage B so arcs connect across weeks (0 disables; scans site_devlog_dir).
+  continuity_max_entries: 3
 # v0.5 provenance (optional; dormant unless you sign entries). Signing is a local
 # GPG act on the PR branch before merge — no key ever enters CI. Each entry's
 # sha256 is anchored per-entry (no merkle tree); anchoring is opt-in: default

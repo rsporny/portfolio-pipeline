@@ -98,6 +98,13 @@ unexplained — e.g. "the model proposes, code disposes" means nothing to a read
 so either explain what it does in plain words or cut it. Prefer a concrete outcome
 over a catchphrase.
 
+When a "Past published entries" block is given, those are the owner's OWN earlier
+devlog entries on related threads. Use them for continuity of voice and narrative
+arc — build on what was already said (a reader may have read it), never repeat or
+contradict it. They are context for you, not material to quote: do not copy their
+sentences, and the content policy still holds — never quote or name a third party
+even if a past entry's prose seems to.
+
 Based on the initiatives below, produce:
 
 1. TITLE: a specific, concrete subtitle — the topic only, with no series name and
@@ -153,11 +160,18 @@ def indexer_prompt(repo: str, initiatives_json: str, threads_json: str) -> str:
     )
 
 
-def stage_b_prompt(initiatives_json: str, thread_context: str = "", focus: str = "") -> str:
+def stage_b_prompt(
+    initiatives_json: str,
+    thread_context: str = "",
+    focus: str = "",
+    published_context: str = "",
+) -> str:
     blocks = [STAGE_B_SYSTEM]
     if focus:
         blocks.append(focus)
     if thread_context:
         blocks.append(thread_context)
+    if published_context:
+        blocks.append(published_context)
     blocks.append(f"Initiatives (JSON):\n{initiatives_json}")
     return "\n\n".join(blocks)

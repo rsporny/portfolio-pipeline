@@ -291,7 +291,7 @@ Public, building-in-public repo. Must include: data-flow diagram, the human-in-t
 - **v0.5** ✅ *shipped* — provenance: each entry committed to by the sha256 of its raw `.md`, GPG-signed, and anchored per-entry on Cardano testnet (no merkle tree). Verifiable with `sha256sum` / `gpg --verify` / an in-browser hash. See Module 6.
 - **provenance, next** — (a) move anchoring from testnet to **mainnet** once the mechanism is proven; (b) **reader-side in-browser chain verification**: the entry badge is link-only today (it recomputes the file's hash and links to the transaction); add a same-origin **Cloudflare Worker → Koios** (keyless) proxy so the badge confirms the hash against Cardano live, without exposing an API key or hitting browser CORS limits.
 - **reader-altitude guard** — keep each generated section pitched to a reader who doesn't know the repo. A new *advisory* check in `src/pipeline/checks.py` flags sections that reproduce PR-description-level mechanics or lean on undefined domain jargon, and Stage B guidance steers toward "what changed and why it matters" over blow-by-blow internals. Adds an over-detailed golden case to `evals/cases/`. Advisory (scored, reported) rather than a hard block — altitude is a judgement call, unlike the existing content-policy gates.
-- **published-entry continuity** — before Stage B, retrieve a handful of *past published entries* related to the current draft and feed them in, so arcs connect across weeks instead of resetting. Cheap Python retrieval (scan `content/devlog/*.md` front-matter — `series`, `source_initiatives` — and score keyword/token overlap against the current threads) picks the top few; only those bodies are loaded, keeping input tokens bounded. Distinct from memory, which is derived thread state — this reads the actual published prose.
+- **published-entry continuity** ✅ *shipped (v0.6)* — before Stage B, retrieve a handful of *past published entries* related to the current draft and feed them in, so arcs connect across weeks instead of resetting. Cheap Python retrieval (scan `content/devlog/*.md` front-matter — `series`, `source_initiatives` — and score keyword/token overlap against the current threads) picks the top few; only those bodies are loaded, keeping input tokens bounded. Distinct from memory, which is derived thread state — this reads the actual published prose.
 - **v1.0** — experiment: ZK-based verifiable claims about private activity (Midnight).
 
 ## Status
@@ -345,4 +345,19 @@ branch before merge — **no key ever enters CI**; the `sporny_pl` adapter's
 `attach_provenance`/`attach_anchor` write the `<slug>.md.sig` sidecar + public key
 and carry the verify-badge fields in the manifest, never touching the `.md`. New
 `pipeline provenance sign|anchor|verify|show`; `provenance.yml` runs an offline,
-secret-free `verify` as an integrity gate. Next: v1.0 (see roadmap).
+secret-free `verify` as an integrity gate.
+
+**v0.6.0** — published-entry continuity. A new `src/pipeline/continuity.py` does
+cheap Python retrieval (no LLM, no embeddings) over the site's already-published
+`content/devlog/*.md`: it scores each entry's front-matter tokens (`series`,
+`title`, `topics`, and `source_initiatives` weighted ×2) against the current
+draft's vocabulary — the active/referenced work threads plus this week's
+initiatives — and loads the top few *bodies* (excerpt-capped, `EXCERPT_CHARS`).
+`transform_week` feeds them to Stage B as a "Past published entries" block so the
+writer builds on its own earlier prose instead of resetting each week — distinct
+from memory (derived thread *state*); this is the actual published *prose*. The
+block is redacted before the call like every model input, and the step is
+failure-tolerant: a missing/empty site dir or any error yields no context and
+never blocks the run. Bounded by `content.continuity_max_entries` (default 3, 0
+disables). From this release, versions are git-tagged as signed annotated tags
+`vMAJOR.MINOR.PATCH`. Next: v1.0 (see roadmap).
