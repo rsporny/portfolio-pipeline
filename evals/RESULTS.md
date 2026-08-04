@@ -1,8 +1,8 @@
 # Eval results
 
 - Model: `claude-opus-4-8`
-- Commit: `d14ac19`
-- Generated: 2026-07-27T15:13:14.750875+00:00
+- Commit: `68f509e`
+- Generated: 2026-08-04T08:00:46.019984+00:00
 - Cases: 4 (0 blocked) | error-severity failures: 0 | warnings: 3
 
 | check | baseline | continuity | deep-context | focus |
@@ -19,6 +19,7 @@
 | initiative_count | ! | ! | ! | ✓ |
 | initiative_faithful_links | ✓ | ✓ | ✓ | ✓ |
 | valid_thread_ref | ✓ | ✓ | ✓ | ✓ |
+| continuity_not_reset | ✓ | ✓ | ✓ | ✓ |
 
 ## Failures
 
