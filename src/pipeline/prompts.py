@@ -23,6 +23,12 @@ initiative provide:
   continues | pivots | concludes | contradicts. Otherwise null. Only reference
   a thread id that appears in the provided list — never invent one.
 
+Each PR carries an `outcome`: `merged` (shipped), `open` (still in progress), or
+`closed_unmerged` (closed WITHOUT merging). A `closed_unmerged` PR is a decision
+or postponement — work that was tried and set aside, not delivered. Describe it as
+such in `what`/`why_it_matters` (what was attempted and why it was dropped or
+deferred); never present it as shipped work.
+
 Some PRs may carry deep context: `review_comments` (a PR's review discussion,
 each tagged author_role owner|other) and `linked_issues` (issues the PR closes or
 references). Use these ONLY to understand what the work was and why — the intent
@@ -45,14 +51,31 @@ Be conservative: fewer, well-maintained threads beat many stale ones. One-off
 chores never become threads. Only touch threads that this week's work genuinely
 affects.
 
+A thread has three kinds of state — keep them distinct:
+- summary: a standing statement of the thread's GOAL and where it now stands.
+  Rewrite it each week toward that goal — it SUPERSEDES the previous summary, it
+  is not a week-by-week log you append to. Anchor the goal in the parent
+  issue/epic when a linked_issue names one. Keep it to 2–4 sentences; if it reads
+  like a changelog of past weeks, tighten it back to goal + current state.
+- assumptions: conservative, testable beliefs about the thread's PREMISE — the
+  bet the work rests on (e.g. "the testnet anchor cost stays negligible at weekly
+  cadence"), seeded from the ticket and later confirmed or falsified. An
+  assumption is a claim that could later turn out wrong. It is NOT an event or a
+  thing you did.
+- key_decisions: concrete decisions and events — what was chosen, shipped,
+  reverted, or POSTPONED, with a short rationale. A closed-unmerged PR belongs
+  here (a postponement/rejection), never as an assumption and never as delivered
+  work in the summary.
+
 You may:
-- update an existing thread: revise its summary (2–4 sentences on where it now
-  stands), change its status (ongoing | pivoted | done), mark one of its
-  existing assumptions confirmed or falsified (match it by its EXACT text), or
-  add a new assumption — a testable belief worth revisiting later, recorded as
-  open (optionally with review_after_weeks: how many weeks from now to revisit
-  it, e.g. 8 — code turns that into a date, so never emit a week); a status is
-  only ever changed through assumption_updates on an assumption that already
+- update an existing thread: rewrite its summary toward the goal (above), change
+  its status (ongoing | pivoted | done), mark one of its existing assumptions
+  confirmed or falsified (match it by its EXACT text), add a new assumption — a
+  testable belief about the premise, recorded as open (optionally with
+  review_after_weeks: how many weeks from now to revisit it, e.g. 8 — code turns
+  that into a date, so never emit a week), or add a new key_decision (a decision
+  or event this week, e.g. a closed-unmerged PR — decision + rationale); a status
+  is only ever changed through assumption_updates on an assumption that already
   exists;
 - create a new thread ONLY for work that clearly starts something ongoing.
 
@@ -69,7 +92,8 @@ that is not listed below.
 Respond ONLY with valid JSON matching this schema:
 {"updates": [{"id", "summary"?, "status"?,
               "assumption_updates": [{"text", "status"}],
-              "new_assumptions": [{"text", "review_after_weeks"?}]}],
+              "new_assumptions": [{"text", "review_after_weeks"?}],
+              "new_key_decisions": [{"decision", "rationale"}]}],
  "new_threads": [{"id", "title", "status"?, "summary"?,
                   "assumptions": [{"text", "review_after_weeks"?}],
                   "key_decisions": [{"decision", "rationale"}]}]}"""
@@ -89,7 +113,9 @@ owner's own perspective; never quote or name any third party (reviewers,
 collaborators). Where an initiative reflects review discussion or linked issues,
 that context informs your understanding only — it never appears verbatim and is
 never attributed. Claim only what the initiatives below support — no invented
-metrics, no embellished outcomes.
+metrics, no embellished outcomes. Where an initiative describes work that was
+postponed, deferred, or closed without shipping (a decision, not a delivery),
+write it as exactly that — a choice made and why — never as a feature you shipped.
 
 Readability comes first: write for an engineer who does not know these
 repositories. Use plain, concrete language; the moment you use a term of art,

@@ -10,8 +10,8 @@ from pipeline.models import (
 )
 
 
-def test_schema_version_is_3():
-    assert SCHEMA_VERSION == 3
+def test_schema_version_is_4():
+    assert SCHEMA_VERSION == 4
 
 
 def test_schema_2_activity_still_parses():
@@ -37,6 +37,47 @@ def test_schema_2_activity_still_parses():
     pr = activity.repos[0].pull_requests[0]
     assert pr.review_comments == []
     assert pr.linked_issues == []
+
+
+def test_pr_outcome_from_api():
+    """`outcome` is derived from state + merged_at when parsing the search API."""
+    merged = PullRequest.from_api(
+        {"number": 1, "title": "m", "state": "closed", "pull_request": {"merged_at": "2026-01-02"}}
+    )
+    closed = PullRequest.from_api({"number": 2, "title": "c", "state": "closed"})
+    open_pr = PullRequest.from_api({"number": 3, "title": "o", "state": "open"})
+    assert merged.outcome == "merged"
+    assert closed.outcome == "closed_unmerged"
+    assert open_pr.outcome == "open"
+
+
+def test_pr_outcome_backfilled_for_v3_file():
+    """A v3 activity.json has no `outcome`; the validator recomputes it from
+    state/merged_at so an old closed-unmerged PR still reads correctly."""
+    legacy = {
+        "schema_version": 3,
+        "generated_at": "2026-01-01T00:00:00Z",
+        "since": "2025-12-25T00:00:00Z",
+        "until": "2026-01-01T00:00:00Z",
+        "week": "2026-W01",
+        "repos": [
+            {
+                "repo": "acme/widget",
+                "pull_requests": [
+                    {"number": 7, "title": "Tried X", "state": "closed"},
+                    {
+                        "number": 8,
+                        "title": "Shipped Y",
+                        "state": "closed",
+                        "merged_at": "2026-01-01T00:00:00Z",
+                    },
+                ],
+            }
+        ],
+    }
+    prs = Activity.model_validate(legacy).repos[0].pull_requests
+    assert prs[0].outcome == "closed_unmerged"
+    assert prs[1].outcome == "merged"
 
 
 def test_deep_context_fields_round_trip():

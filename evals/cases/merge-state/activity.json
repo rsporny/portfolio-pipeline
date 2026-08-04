@@ -1,0 +1,55 @@
+{
+  "schema_version": 4,
+  "generated_at": "2026-07-12T16:00:00Z",
+  "since": "2026-07-05T16:00:00Z",
+  "until": "2026-07-12T16:00:00Z",
+  "week": "2026-W28",
+  "repos": [
+    {
+      "repo": "o/engine",
+      "commits": [
+        {
+          "sha": "a1",
+          "date": "2026-07-07T09:00:00Z",
+          "message": "Persist the run queue to disk so a restart resumes in-flight jobs",
+          "url": "https://github.com/o/engine/commit/a1",
+          "files": [{"filename": "engine/queue.py", "additions": 120, "deletions": 30, "changes": 150}]
+        }
+      ],
+      "pull_requests": [
+        {
+          "number": 41,
+          "title": "Durable run queue: resume in-flight jobs after a restart",
+          "description": "Persists the run queue to disk so a crash or restart resumes jobs instead of dropping them. Closes #38.",
+          "labels": ["reliability"],
+          "state": "closed",
+          "url": "https://github.com/o/engine/pull/41",
+          "merged_at": "2026-07-08T10:00:00Z",
+          "outcome": "merged",
+          "review_comments": [],
+          "linked_issues": [
+            {"number": 38, "title": "A restart drops in-flight jobs", "url": "https://github.com/o/engine/issues/38", "state": "closed", "relation": "closes"}
+          ]
+        },
+        {
+          "number": 42,
+          "title": "Distributed lock via the database for multi-node scheduling",
+          "description": "Attempt at a DB-backed advisory lock so several scheduler nodes can run without double-dispatching a job. References #39.",
+          "labels": ["scheduling"],
+          "state": "closed",
+          "url": "https://github.com/o/engine/pull/42",
+          "merged_at": null,
+          "outcome": "closed_unmerged",
+          "review_comments": [
+            {"body": "The DB lock adds a round-trip on every dispatch and couples scheduling to database availability — is that the tradeoff we want before we have real multi-node load?", "author_role": "other", "kind": "review"},
+            {"body": "Fair. Holding off — the single-node path is fine for now and a lease-based approach may fit better later.", "author_role": "owner", "kind": "conversation"}
+          ],
+          "linked_issues": [
+            {"number": 39, "title": "Support multiple scheduler nodes without double-dispatch", "url": "https://github.com/o/engine/issues/39", "state": "open", "relation": "references"}
+          ]
+        }
+      ],
+      "issues": []
+    }
+  ]
+}

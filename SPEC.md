@@ -292,7 +292,7 @@ Public, building-in-public repo. Must include: data-flow diagram, the human-in-t
 - **provenance, next** — (a) move anchoring from testnet to **mainnet** once the mechanism is proven; (b) **reader-side in-browser chain verification**: the entry badge is link-only today (it recomputes the file's hash and links to the transaction); add a same-origin **Cloudflare Worker → Koios** (keyless) proxy so the badge confirms the hash against Cardano live, without exposing an API key or hitting browser CORS limits.
 - **reader-altitude guard** — keep each generated section pitched to a reader who doesn't know the repo. A new *advisory* check in `src/pipeline/checks.py` flags sections that reproduce PR-description-level mechanics or lean on undefined domain jargon, and Stage B guidance steers toward "what changed and why it matters" over blow-by-blow internals. Adds an over-detailed golden case to `evals/cases/`. Advisory (scored, reported) rather than a hard block — altitude is a judgement call, unlike the existing content-policy gates.
 - **published-entry continuity** ✅ *shipped (v0.6)* — before Stage B, retrieve a handful of *past published entries* related to the current draft and feed them in, so arcs connect across weeks instead of resetting. Cheap Python retrieval (scan `content/devlog/*.md` front-matter — `series`, `source_initiatives` — and score keyword/token overlap against the current threads) picks the top few; only those bodies are loaded, keeping input tokens bounded. Distinct from memory, which is derived thread state — this reads the actual published prose.
-- **v0.7 — indexer & thread-memory hardening** (from live-instance runs). The registry is the pipeline's long-term memory, and real runs surfaced ways it drifts. (a) **Merge-state awareness** — a closed-unmerged PR is a decision/postponement, not shipped work: the indexer records it as a `key_decision` (+ status), and Stage A/B frame it as postponed rather than delivered (today it reads as shipped). (b) **Goal-oriented summaries** — a thread summary is *rewritten* toward its goal, anchored to the parent issue/epic (deep-context `linked_issues`), not appended to every week (today they bloat into run-ons). (c) **Premise-level assumptions** — assumptions become conservative, testable beliefs about a thread's premise (seeded from the ticket, then confirmed/falsified); events and decisions go to `key_decisions`, not assumptions. (d) **Focus picker** — dedupe candidates by thread id (a thread id is unique identity; the same id must never list twice) and label each with status/age + a summary snippet and this week's relation, so terse or near-identical titles don't leave the author unable to choose. (This became a defensive safety net once v0.6.2 fixed the cross-registry pollution that produced the duplicate ids; see Status.)
+- **v0.7 — indexer & thread-memory hardening** ✅ *shipped (v0.7.0)* (from live-instance runs). The registry is the pipeline's long-term memory, and real runs surfaced ways it drifts. (a) **Merge-state awareness** — a closed-unmerged PR is a decision/postponement, not shipped work: the indexer records it as a `key_decision` (+ status), and Stage A/B frame it as postponed rather than delivered (today it reads as shipped). (b) **Goal-oriented summaries** — a thread summary is *rewritten* toward its goal, anchored to the parent issue/epic (deep-context `linked_issues`), not appended to every week (today they bloat into run-ons). (c) **Premise-level assumptions** — assumptions become conservative, testable beliefs about a thread's premise (seeded from the ticket, then confirmed/falsified); events and decisions go to `key_decisions`, not assumptions. (d) **Focus picker** — dedupe candidates by thread id (a thread id is unique identity; the same id must never list twice) and label each with status/age + a summary snippet and this week's relation, so terse or near-identical titles don't leave the author unable to choose. (This became a defensive safety net once v0.6.2 fixed the cross-registry pollution that produced the duplicate ids; see Status.)
 - **v1.0** — experiment: ZK-based verifiable claims about private activity (Midnight).
 
 ## Status
@@ -385,4 +385,25 @@ focus candidates. `transform_week` now scopes each repo's indexer to only the
 initiatives whose work is in that repo (`_initiatives_for_repo`, matching
 `owner/repo` parsed from each initiative's links); a repo with no initiatives of
 its own is skipped entirely (subsuming the "skip inactive repo" idea). This stops
-the indexer from creating or referencing a foreign thread. Next: v1.0 (see roadmap).
+the indexer from creating or referencing a foreign thread.
+
+**v0.7.0** — indexer & thread-memory hardening (from live-instance runs). Four
+fixes to how the registry — the pipeline's long-term memory — is maintained and
+surfaced. **(a) Merge-state awareness:** `activity.json` is now `schema_version:
+4`, each PR carrying a derived `outcome` (`merged` | `closed_unmerged` | `open`,
+backfilled for v3 files); a `closed_unmerged` PR is a decision/postponement, so
+Stage A/B frame it as such (never shipped) and the indexer can record it as a
+`key_decision` on an *existing* thread — `ThreadUpdate` gained `new_key_decisions`
+(before this only a brand-new thread could carry decisions). **(b) Goal-oriented
+summaries:** the indexer now *rewrites* a thread summary toward its goal (anchored
+to the parent issue/epic from deep-context `linked_issues`), superseding the prior
+one rather than appending each week. **(c) Premise-level assumptions:** the
+indexer prompt draws a clear line — assumptions are conservative, testable beliefs
+about a thread's premise; events and decisions go to `key_decisions`, not
+assumptions. **(d) Focus picker:** candidates are deduped by thread id
+(`_active_threads`) and each is offered as a `FocusCandidate` labelled with
+status, age, this week's relation, and a summary snippet, so terse or
+near-identical titles are distinguishable. No new thread-registry *fields* beyond
+`new_key_decisions` (goal-orientation and postponement framing are prompt-driven,
+reusing existing summary/decision fields). A `merge-state` golden case exercises
+the postponement framing under the check suite. Next: v1.0 (see roadmap).

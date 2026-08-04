@@ -1,0 +1,5 @@
+description: "A closed-unmerged PR must read as a decision/postponement, never as shipped work."
+github_user: rsporny
+allowlist: [o/engine]
+descriptions:
+  o/engine: "A task-scheduling engine (Python)."

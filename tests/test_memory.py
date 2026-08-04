@@ -133,6 +133,30 @@ def test_apply_assumption_status_change_and_new_assumption():
     assert assumptions[1].made_week == "2026-W29"  # stamped by code, not the model
 
 
+def test_apply_new_key_decision_on_existing_thread():
+    """v0.7 (a): the indexer can record a decision (e.g. a closed-unmerged PR is a
+    postponement) on an EXISTING thread — not only on a brand-new one — and code
+    stamps the run week."""
+    reg = ThreadRegistry(threads=[_thread()])
+    muts = IndexerMutations(
+        updates=[
+            ThreadUpdate(
+                id="collector",
+                new_key_decisions=[
+                    ProposedKeyDecision(
+                        decision="Postponed pagination refactor",
+                        rationale="PR closed unmerged; approach needs rethinking",
+                    )
+                ],
+            )
+        ]
+    )
+    out = apply_mutations(reg, muts, week="2026-W29")
+    decisions = out.get("collector").key_decisions
+    assert decisions[-1].decision == "Postponed pagination refactor"
+    assert decisions[-1].week == "2026-W29"  # stamped by code, not the model
+
+
 def test_apply_new_thread_stamps_weeks():
     reg = ThreadRegistry()
     new = ProposedThread(id="memory-module", title="Memory", summary="Threads + assumptions.")

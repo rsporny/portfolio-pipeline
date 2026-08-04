@@ -1,0 +1,22 @@
+threads:
+  - id: multi-node-scheduling
+    title: Multi-node scheduling
+    status: ongoing
+    started_week: 2026-W26
+    last_active_week: 2026-W27
+    summary: >-
+      Goal: let several scheduler nodes run without dispatching the same job
+      twice (issue #39). The single-node path is solid; the open question is how
+      nodes coordinate — a shared lock versus leases.
+    assumptions:
+      - text: A database-backed advisory lock is a good enough coordination primitive.
+        made_week: 2026-W26
+        status: open
+  - id: durable-queue
+    title: Durable run queue
+    status: ongoing
+    started_week: 2026-W27
+    last_active_week: 2026-W27
+    summary: >-
+      Goal: no job is lost across a restart (issue #38). Persisting the queue to
+      disk so in-flight work resumes rather than being dropped.

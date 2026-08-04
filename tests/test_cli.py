@@ -5,12 +5,26 @@ import typer
 
 from pipeline import cli
 from pipeline.memory import Thread
+from pipeline.transform import FocusCandidate
 
 
-def _candidates() -> list[Thread]:
+def _candidates() -> list[FocusCandidate]:
     return [
-        Thread(id="bridge-network", title="Bridge-funded local network"),
-        Thread(id="node-robustness", title="Node & toolkit robustness"),
+        FocusCandidate(
+            thread=Thread(
+                id="bridge-network",
+                title="Bridge-funded local network",
+                started_week="2026-W20",
+                summary="Fund a local devnet from the bridge so integration tests run offline.",
+            ),
+            relation="continues",
+            age_weeks=4,
+        ),
+        FocusCandidate(
+            thread=Thread(id="node-robustness", title="Node & toolkit robustness"),
+            relation="new this week",
+            age_weeks=0,
+        ),
     ]
 
 
@@ -56,6 +70,19 @@ def test_focus_interactively_ignores_out_of_range(monkeypatch):
 
 def test_focus_interactively_no_candidates_returns_empty():
     assert cli._focus_interactively([]) == []
+
+
+def test_focus_interactively_labels_status_age_relation_snippet(monkeypatch, capsys):
+    # The label must carry enough to tell terse/near-identical titles apart:
+    # status, age, this week's relation, and a summary snippet (v0.7 (d)).
+    monkeypatch.setattr(cli.typer, "prompt", lambda *a, **k: "")
+    cli._focus_interactively(_candidates())
+    out = capsys.readouterr().out
+    assert "4 weeks old" in out
+    assert "new this week" in out
+    assert "this week: continues" in out
+    assert "ongoing" in out  # thread.status
+    assert "run offline" in out  # from the summary snippet
 
 
 # --- selector resolution ----------------------------------------------------
