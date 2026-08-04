@@ -410,6 +410,24 @@ def _repo_from_links(links: list[str]) -> str:
     return ""
 
 
+def _initiative_repos(init: Initiative) -> set[str]:
+    """Every ``owner/repo`` an initiative's proof-of-work links point to — the
+    repos whose memory that initiative may legitimately touch. Empty when it cites
+    no GitHub link (then it belongs to no repo's indexer)."""
+    return {m.group(1) for link in init.links for m in [_GITHUB_REPO.search(link)] if m}
+
+
+def _initiatives_for_repo(initiatives: Initiatives, repo: str) -> Initiatives:
+    """The subset of this week's initiatives whose work is in ``repo``. Scoping the
+    indexer to these is what stops one repo's indexer from creating or referencing
+    another repo's thread — Stage A emits a single cross-repo list, so without this
+    every repo's indexer sees all of it and pollutes its registry with foreign
+    threads."""
+    return Initiatives(
+        initiatives=[i for i in initiatives.initiatives if repo in _initiative_repos(i)]
+    )
+
+
 def _section_init(body: str, initiatives: Initiatives) -> Initiative | None:
     """The initiative a rendered ``##`` section describes, joined by the
     proof-of-work link it cites (written verbatim from the initiative's ``links``).
@@ -560,9 +578,16 @@ def transform_week(
     (out_dir / "summary-tech.json").write_text(initiatives.model_dump_json(indent=2))
     (out_dir / "summary-tech.md").write_text(_render_summary(week, initiatives))
 
-    # Indexer — model proposes, code disposes. Failure-tolerant per repo.
+    # Indexer — model proposes, code disposes. Failure-tolerant per repo. Each
+    # repo's indexer sees ONLY the initiatives whose work is in that repo, so it
+    # can neither create nor reference another repo's thread (that cross-repo leak
+    # pollutes registries). A repo with no initiatives of its own is skipped.
     for mem in memories:
-        _run_indexer(llm, initiatives, mem, week, phrases, out_dir)
+        repo_inits = _initiatives_for_repo(initiatives, mem.repo)
+        if not repo_inits.initiatives:
+            logger.info("Indexer: no initiatives for %s this week — skipping", mem.repo)
+            continue
+        _run_indexer(llm, repo_inits, mem, week, phrases, out_dir)
         if mem.changed:
             path = save_registry(mem.registry, mem.memory_dir)
             logger.info("Indexer updated memory → %s", path)

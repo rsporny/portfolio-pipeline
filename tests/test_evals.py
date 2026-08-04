@@ -17,7 +17,9 @@ from pipeline.models import Activity
 
 CASES_DIR = Path(__file__).parent.parent / "evals" / "cases"
 
-PR_URL = "https://h/pull/1"
+# A real github.com URL for the hermetic repo — the indexer is scoped per repo by
+# parsing owner/repo from initiative links, so a placeholder host would skip it.
+PR_URL = "https://github.com/h/repo/pull/1"
 
 
 class _FakeLLM:
