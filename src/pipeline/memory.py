@@ -142,6 +142,10 @@ class ThreadUpdate(BaseModel):
     status: ThreadStatus | None = None
     assumption_updates: list[AssumptionUpdate] = Field(default_factory=list)
     new_assumptions: list[ProposedAssumption] = Field(default_factory=list)
+    # A decision made on an existing thread this week — e.g. a closed-unmerged PR
+    # is a postponement/rejection, recorded here (not as shipped work). Before v0.7
+    # only a brand-new thread could carry key_decisions.
+    new_key_decisions: list[ProposedKeyDecision] = Field(default_factory=list)
 
 
 class IndexerMutations(BaseModel):
@@ -215,6 +219,7 @@ def apply_mutations(
                 )
             assumption.status = change.status
         thread.assumptions.extend(proposed.stamp(week) for proposed in update.new_assumptions)
+        thread.key_decisions.extend(proposed.stamp(week) for proposed in update.new_key_decisions)
         thread.last_active_week = week  # touched this week
 
     seen_new: set[str] = set()

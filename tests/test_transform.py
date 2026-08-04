@@ -1009,6 +1009,42 @@ def test_focus_directive_restricts_and_asks_per_topic_proof(tmp_path):
     assert "separate things done this week" in stage_b
 
 
+def test_active_threads_dedupes_by_id():
+    """v0.7 (d): a thread id is unique identity, so even if the same id is active in
+    two registries it is offered once (defensive net after v0.6.2)."""
+    from pipeline.transform import RepoMemory, _active_threads
+
+    def _mem(repo, title):
+        reg = ThreadRegistry(
+            threads=[Thread(id="shared", title=title, last_active_week="2026-W27")]
+        )
+        return RepoMemory(repo=repo, memory_dir=None, context="", registry=reg)
+
+    active = _active_threads([_mem("o/a", "A"), _mem("o/b", "B")], "2026-W27")
+    assert [t.id for t in active] == ["shared"]
+
+
+def test_focus_candidates_carry_relation_and_age():
+    """Each candidate is labelled with this week's relation (from an initiative's
+    thread_ref, else new/active) and its age in whole weeks."""
+    from pipeline.models import ThreadRef
+    from pipeline.transform import _focus_candidates
+
+    threads = [
+        Thread(id="old", title="Old", started_week="2026-W23", last_active_week="2026-W27"),
+        Thread(id="fresh", title="Fresh", started_week="2026-W27", last_active_week="2026-W27"),
+    ]
+    inits = _inits(("Work", "cat"))
+    inits.initiatives[0].thread_ref = ThreadRef(id="old", relation="continues")
+
+    cands = {c.id: c for c in _focus_candidates(threads, inits, "2026-W27")}
+    assert cands["old"].relation == "continues"
+    assert cands["old"].age_weeks == 4
+    assert cands["old"].age_label == "4 weeks old"
+    assert cands["fresh"].relation == "new this week"  # started this week, unreferenced
+    assert cands["fresh"].age_weeks == 0
+
+
 # --- topics: front matter (category dividers) -------------------------------
 
 

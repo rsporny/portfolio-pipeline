@@ -132,7 +132,7 @@ def test_run_case_captures_a_run_error(tmp_path):
 
 def test_discover_cases_finds_all_golden_cases():
     ids = {p.name for p in discover_cases(CASES_DIR)}
-    assert {"baseline", "continuity", "focus", "deep-context"} <= ids
+    assert {"baseline", "continuity", "focus", "deep-context", "merge-state"} <= ids
 
 
 def test_discover_cases_rejects_unknown_id():

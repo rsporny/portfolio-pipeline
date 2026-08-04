@@ -21,7 +21,6 @@ from .evals import (
 )
 from .github import GitHubClient
 from .llm import LLMClient, TransformError
-from .memory import Thread
 from .models import Activity
 from .provenance import log as plog
 from .provenance import verify as pverify
@@ -33,7 +32,7 @@ from .provenance.sign import fingerprint as gpg_fingerprint
 from .publish import PublishError, _resolve_site_dir, publish_approved, publish_custom
 from .review import list_drafts
 from .site_adapter import RenderContext, get_adapter
-from .transform import transform_week
+from .transform import FocusCandidate, transform_week
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
@@ -58,10 +57,10 @@ KIND_OPTION = typer.Option(None, "--kind", help="Kicker label (default: site sho
 DATE_OPTION = typer.Option(None, "--date", help="Published date YYYY-MM-DD (default: today)")
 
 
-def _focus_from_flag(focus: list[str], candidates: list[Thread]) -> list[str]:
+def _focus_from_flag(focus: list[str], candidates: list[FocusCandidate]) -> list[str]:
     """Validate ``--focus`` ids against the threads active this week; a bad id is a
     hard error (exact-id contract) that lists the valid options."""
-    ids = {t.id for t in candidates}
+    ids = {c.id for c in candidates}
     unknown = [f for f in focus if f not in ids]
     if unknown:
         typer.echo(f"unknown --focus thread id(s): {', '.join(unknown)}", err=True)
@@ -70,14 +69,22 @@ def _focus_from_flag(focus: list[str], candidates: list[Thread]) -> list[str]:
     return focus
 
 
-def _focus_interactively(candidates: list[Thread]) -> list[str]:
+def _focus_interactively(candidates: list[FocusCandidate]) -> list[str]:
     """Print the threads active this week and let the user pick which lead the
-    entry. Empty input means auto (the model picks)."""
+    entry. Each is labelled with status/age + this week's relation and a summary
+    snippet so terse or near-identical titles are distinguishable. Empty input
+    means auto (the model picks)."""
     if not candidates:
         return []
     typer.echo(f"\nThreads active this week ({len(candidates)}):")
-    for i, thread in enumerate(candidates, 1):
-        typer.echo(f"  [{i}] {thread.title} ({thread.id})")
+    for i, cand in enumerate(candidates, 1):
+        thread = cand.thread
+        typer.echo(
+            f"  [{i}] {thread.title} ({thread.id}) "
+            f"— {thread.status}, {cand.age_label}, this week: {cand.relation}"
+        )
+        if cand.summary_snippet:
+            typer.echo(f"      {cand.summary_snippet}")
     raw = typer.prompt(
         "Focus which? (comma-separated numbers, empty = let the model pick)",
         default="",
@@ -96,7 +103,9 @@ def _focus_interactively(candidates: list[Thread]) -> list[str]:
     return picks
 
 
-def _make_focus_selector(focus: list[str] | None) -> Callable[[list[Thread]], list[str]] | None:
+def _make_focus_selector(
+    focus: list[str] | None,
+) -> Callable[[list[FocusCandidate]], list[str]] | None:
     """Resolve how the entry's focus is chosen: an explicit ``--focus`` (validated),
     an interactive prompt on a TTY, or auto (``None``) for non-interactive runs
     such as CI so they never block."""

@@ -3,13 +3,17 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 # Bump when the on-disk activity.json shape changes.
 # v2: added `url` (GitHub html_url) to commits/PRs/issues for proof-of-work links.
 # v3: added anonymized deep context on PRs (review_comments, linked_issues),
 #     fetched only for repos with an active thread (v0.3 selective deep context).
-SCHEMA_VERSION = 3
+# v4: added derived `outcome` (merged | closed_unmerged | open) to PRs, so the
+#     model reads a closed-unmerged PR as a decision/postponement, not shipped
+#     work (v0.7 merge-state awareness). Derivable from state/merged_at, so v3
+#     files still parse — the validator backfills it.
+SCHEMA_VERSION = 4
 
 
 class FileChange(BaseModel):
@@ -93,6 +97,21 @@ class LinkedIssue(BaseModel):
         )
 
 
+# A PR's fate this week. ``closed_unmerged`` is the decision case (v0.7): the PR
+# was closed WITHOUT merging — a postponement/rejection, not shipped work.
+PullRequestOutcome = Literal["merged", "closed_unmerged", "open"]
+
+
+def _derive_outcome(state: str, merged_at: datetime | None) -> PullRequestOutcome:
+    """Merge outcome from GitHub's ``state`` + ``merged_at``: merged if it carries a
+    merge timestamp, ``closed_unmerged`` if closed without one, else open."""
+    if merged_at is not None:
+        return "merged"
+    if state == "closed":
+        return "closed_unmerged"
+    return "open"
+
+
 class PullRequest(BaseModel):
     number: int
     title: str
@@ -102,10 +121,24 @@ class PullRequest(BaseModel):
     url: str = ""
     created_at: datetime | None = None
     merged_at: datetime | None = None
+    # v0.7 merge-state awareness — derived from state/merged_at, serialized so the
+    # model reads it directly rather than inferring "shipped" from a null merge
+    # timestamp. Backfilled by the validator for v3 files that predate the field.
+    outcome: PullRequestOutcome = "open"
     # v0.3 deep context — populated only for repos with an active thread, empty
     # otherwise (so a schema-2 activity.json still parses unchanged).
     review_comments: list[ReviewComment] = Field(default_factory=list)
     linked_issues: list[LinkedIssue] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _backfill_outcome(self) -> PullRequest:
+        """Derive ``outcome`` from ``state``/``merged_at`` whenever it was not set
+        explicitly (a v3 ``activity.json`` has no ``outcome``, so it defaults to
+        ``open`` — recompute so an old closed-unmerged PR still reads correctly)."""
+        derived = _derive_outcome(self.state, self.merged_at)
+        if self.outcome != derived and self.outcome == "open":
+            self.outcome = derived
+        return self
 
     @classmethod
     def from_api(cls, data: dict) -> PullRequest:
@@ -113,15 +146,18 @@ class PullRequest(BaseModel):
         merge state lives in the nested ``pull_request`` object there."""
         labels = [lbl["name"] for lbl in data.get("labels", []) if isinstance(lbl, dict)]
         pr = data.get("pull_request") or {}
+        merged_at = pr.get("merged_at") or data.get("merged_at")
+        state = data.get("state", "")
         return cls(
             number=data["number"],
             title=data.get("title", ""),
             description=data.get("body") or "",
             labels=labels,
-            state=data.get("state", ""),
+            state=state,
             url=data.get("html_url", ""),
             created_at=data.get("created_at"),
-            merged_at=pr.get("merged_at") or data.get("merged_at"),
+            merged_at=merged_at,
+            outcome=_derive_outcome(state, merged_at),
         )
 
 

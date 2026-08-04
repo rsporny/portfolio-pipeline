@@ -68,6 +68,38 @@ class RepoMemory:
     changed: bool = False
 
 
+# Longest thread-summary snippet shown next to a focus candidate.
+_FOCUS_SNIPPET_CHARS = 140
+
+
+@dataclass
+class FocusCandidate:
+    """A thread offered to the focus picker, with the context a human needs to tell
+    terse or near-identical titles apart: its status, age (whole weeks since it
+    started), how this week's work relates to it, and a summary snippet."""
+
+    thread: Thread
+    relation: str  # this week's relation ("continues"/"pivots"/… or "new this week")
+    age_weeks: int  # whole weeks since started_week; 0 == new this week
+
+    @property
+    def id(self) -> str:
+        return self.thread.id
+
+    @property
+    def age_label(self) -> str:
+        if self.age_weeks <= 0:
+            return "new this week"
+        return "1 week old" if self.age_weeks == 1 else f"{self.age_weeks} weeks old"
+
+    @property
+    def summary_snippet(self) -> str:
+        summary = " ".join(self.thread.summary.split())
+        if len(summary) <= _FOCUS_SNIPPET_CHARS:
+            return summary
+        return summary[: _FOCUS_SNIPPET_CHARS - 1].rstrip() + "…"
+
+
 def _repo_context(config: Config, activity: Activity) -> str:
     """Domain descriptions for the repos present in this week's activity."""
     descriptions = config.repos.descriptions
@@ -214,8 +246,36 @@ def _render_thread_context(
 def _active_threads(memories: list[RepoMemory], week: str) -> list[Thread]:
     """Threads the indexer created or touched this week — the candidates a human
     can pick from to focus the entry (``apply_mutations`` stamps
-    ``last_active_week = week`` on every thread it creates or touches)."""
-    return [t for mem in memories for t in mem.registry.threads if t.last_active_week == week]
+    ``last_active_week = week`` on every thread it creates or touches). Deduped by
+    id: a thread id is unique identity, so the same id must never be offered twice
+    (a defensive net after v0.6.2 stopped cross-registry pollution)."""
+    seen: set[str] = set()
+    active: list[Thread] = []
+    for mem in memories:
+        for thread in mem.registry.threads:
+            if thread.last_active_week == week and thread.id not in seen:
+                seen.add(thread.id)
+                active.append(thread)
+    return active
+
+
+def _focus_candidates(
+    threads: list[Thread], initiatives: Initiatives, week: str
+) -> list[FocusCandidate]:
+    """Wrap this week's active threads with the picker context: this week's
+    relation (from an initiative's ``thread_ref``, else "new this week" for one
+    that just started) and age in whole weeks."""
+    relation_by_id = {
+        init.thread_ref.id: init.thread_ref.relation
+        for init in initiatives.initiatives
+        if init.thread_ref is not None
+    }
+    candidates: list[FocusCandidate] = []
+    for thread in threads:
+        age = weeks_between(thread.started_week, week) if thread.started_week else 0
+        relation = relation_by_id.get(thread.id) or ("new this week" if age <= 0 else "active")
+        candidates.append(FocusCandidate(thread=thread, relation=relation, age_weeks=age))
+    return candidates
 
 
 def _render_focus(selected: list[Thread]) -> str:
@@ -530,7 +590,7 @@ def transform_week(
     week: str | None = None,
     memory_root: Path | str | None = None,
     site_dir: Path | str | None = None,
-    focus_selector: Callable[[list[Thread]], list[str]] | None = None,
+    focus_selector: Callable[[list[FocusCandidate]], list[str]] | None = None,
     enforce_checks: bool = True,
 ) -> Path:
     """Run redaction → Stage A (memory-aware) → indexer → Stage B (thread-aware)
@@ -542,9 +602,10 @@ def transform_week(
     missing dir (a fresh instance) simply yields no continuity context.
 
     ``focus_selector`` (optional) is called after the indexer with the threads
-    active this week and returns the ids the entry should lead on; the caller owns
-    how they are chosen (interactive prompt, ``--focus`` flag, …). Omitted or an
-    empty return means the model picks the lead itself."""
+    active this week (as :class:`FocusCandidate`s carrying status/age/relation) and
+    returns the ids the entry should lead on; the caller owns how they are chosen
+    (interactive prompt, ``--focus`` flag, …). Omitted or an empty return means the
+    model picks the lead itself."""
     raw_dir = Path(raw_dir) if raw_dir is not None else config.state_dir("raw")
     drafts_dir = Path(drafts_dir) if drafts_dir is not None else config.state_dir("drafts")
     root = Path(memory_root) if memory_root is not None else config.state_dir("memory")
@@ -593,10 +654,12 @@ def transform_week(
             logger.info("Indexer updated memory → %s", path)
     due = [pair for mem in memories for pair in reviews_due(mem.registry, week)]
 
-    # Focus — let the caller pick which thread(s) this week's entry leads on.
+    # Focus — let the caller pick which thread(s) this week's entry leads on. The
+    # picker gets enriched, deduped candidates (status/age/relation/snippet).
     candidates = _active_threads(memories, week)
-    selected_ids = list(focus_selector(candidates)) if focus_selector else []
-    candidate_ids = {t.id for t in candidates}
+    focus_candidates = _focus_candidates(candidates, initiatives, week)
+    selected_ids = list(focus_selector(focus_candidates)) if focus_selector else []
+    candidate_ids = {c.id for c in focus_candidates}
     unknown = [tid for tid in selected_ids if tid not in candidate_ids]
     if unknown:
         raise TransformError(
@@ -604,7 +667,7 @@ def transform_week(
             f"Active this week: {', '.join(sorted(candidate_ids)) or '(none)'}"
         )
     # Preserve the order the caller picked — the first is the primary lead.
-    by_id = {t.id: t for t in candidates}
+    by_id = {c.thread.id: c.thread for c in focus_candidates}
     focus = _render_focus([by_id[tid] for tid in selected_ids])
 
     # Stage B — writing, thread-aware (redact the Stage A output too).
