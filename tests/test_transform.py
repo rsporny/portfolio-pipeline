@@ -703,6 +703,109 @@ def test_indexer_model_error_falls_back(tmp_path):
     assert reg.get("collector").last_active_week == "2026-W25"  # untouched
 
 
+# --- indexer scoping (one repo's indexer sees only its own initiatives) ------
+
+
+def _write_two_repo_activity(raw_dir, week: str = "2026-W27") -> str:
+    now = datetime.now(UTC)
+    activity = Activity(
+        generated_at=now,
+        since=now,
+        until=now,
+        week=week,
+        repos=[
+            RepoActivity(
+                repo="o/r",
+                pull_requests=[
+                    PullRequest(number=5, title="A", url="https://github.com/o/r/pull/5")
+                ],
+            ),
+            RepoActivity(
+                repo="o/other",
+                pull_requests=[
+                    PullRequest(number=9, title="B", url="https://github.com/o/other/pull/9")
+                ],
+            ),
+        ],
+    )
+    week_dir = raw_dir / week
+    week_dir.mkdir(parents=True)
+    (week_dir / "activity.json").write_text(activity.model_dump_json())
+    return week
+
+
+def _stage_a_two():
+    """Two initiatives, one per repo, each citing its own repo's PR link."""
+    data = {
+        "initiatives": [
+            {
+                "name": "Reader output",
+                "category": "Developer tooling",
+                "what": "Pipeline work.",
+                "why_it_matters": "y",
+                "tech": [],
+                "links": ["https://github.com/o/r/pull/5"],
+            },
+            {
+                "name": "Bridge funding",
+                "category": "Blockchain",
+                "what": "Node work.",
+                "why_it_matters": "y",
+                "tech": [],
+                "links": ["https://github.com/o/other/pull/9"],
+            },
+        ]
+    }
+    return data, json.dumps(data)
+
+
+def test_indexer_scoped_to_repos_own_initiatives(tmp_path):
+    """Each repo's indexer receives ONLY the initiatives whose work is in that repo,
+    so it can't create/reference another repo's thread (the cross-repo pollution
+    bug). Stage A emits one combined list; scoping splits it by repo."""
+    raw_dir, drafts_dir = tmp_path / "raw", tmp_path / "drafts"
+    week = _write_two_repo_activity(raw_dir)
+    llm = _FakeLLM([_stage_a_two(), _indexer(), _indexer(), _stage_b()])
+
+    transform_week(
+        _config(),
+        llm,
+        raw_dir=raw_dir,
+        drafts_dir=drafts_dir,
+        week=week,
+        memory_root=tmp_path / "memory",
+    )
+
+    idx_or = next(p for p in llm.prompts if "Repository: o/r" in p)
+    idx_other = next(p for p in llm.prompts if "Repository: o/other" in p)
+    assert "Reader output" in idx_or and "Bridge funding" not in idx_or
+    assert "Bridge funding" in idx_other and "Reader output" not in idx_other
+
+
+def test_indexer_skipped_for_repo_with_no_own_initiatives(tmp_path):
+    """A repo with activity but no initiative of its own is skipped entirely — no
+    indexer call (so no chance to hallucinate a foreign thread). Only one initiative
+    (o/r) is produced, so o/other never reaches the indexer; if it did, the fake
+    LLM would run out of canned responses."""
+    raw_dir, drafts_dir = tmp_path / "raw", tmp_path / "drafts"
+    week = _write_two_repo_activity(raw_dir)
+    # _stage_a() yields a single o/r initiative; o/other has no initiative.
+    llm = _FakeLLM([_stage_a(), _indexer(), _stage_b()])
+
+    out_dir = transform_week(
+        _config(),
+        llm,
+        raw_dir=raw_dir,
+        drafts_dir=drafts_dir,
+        week=week,
+        memory_root=tmp_path / "memory",
+    )
+
+    assert (out_dir / "devlog.md").exists()
+    assert any("Repository: o/r" in p for p in llm.prompts)
+    assert not any("Repository: o/other" in p for p in llm.prompts)
+
+
 def test_stage_b_prompt_carries_thread_and_review_context(tmp_path):
     """Stage B receives continuity for referenced threads and any assumptions due
     for review, so it can weave the arc in and revisit stale beliefs."""
