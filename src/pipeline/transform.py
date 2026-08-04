@@ -10,9 +10,22 @@ from pathlib import Path
 
 from pydantic import BaseModel, ValidationError
 
-from .checks import CheckResult, build_context, check_content, check_initiatives, failures
+from .checks import (
+    CheckResult,
+    build_context,
+    check_content,
+    check_continuity,
+    check_initiatives,
+    failures,
+)
 from .config import Config
-from .continuity import RelatedEntry, query_tokens_for, retrieve_related
+from .continuity import (
+    RelatedSection,
+    covered_thread_ids,
+    load_sections,
+    query_tokens_for,
+    score_sections,
+)
 from .llm import LLMClient, TransformError
 from .memory import (
     Assumption,
@@ -226,55 +239,61 @@ def _render_focus(selected: list[Thread]) -> str:
     )
 
 
-def _render_published_context(entries: list[RelatedEntry]) -> str:
-    """Stage B block carrying the owner's own related past published entries — the
-    actual prose, for continuity of voice and arc across weeks (distinct from the
-    derived thread state in `_render_thread_context`). Empty when none matched."""
-    if not entries:
+def _render_published_context(sections: list[RelatedSection]) -> str:
+    """Stage B block carrying the owner's own related past published *sections* —
+    the actual prose, for continuity of voice and arc across weeks (distinct from
+    the derived thread state in `_render_thread_context`). Empty when none
+    matched."""
+    if not sections:
         return ""
     blocks = [
-        "Past published entries (your own earlier writing on related threads — for "
-        "continuity of voice and narrative arc; build on them, do not repeat or "
-        "contradict them, and never quote a third party):"
+        "Past published sections (your own earlier writing on related threads — "
+        "build on them, do not repeat or contradict them, and do not introduce as "
+        "new a thread you have already written about here; never quote a third "
+        "party):"
     ]
-    for entry in entries:
-        heading = f'"{entry.title}"'
-        if entry.series:
-            heading = f"{entry.series} — {heading}"
-        if entry.date:
-            heading += f" ({entry.date})"
-        blocks.append(f"### {heading}\n{entry.body}")
+    for sec in sections:
+        label = f'"{sec.entry_title}"'
+        if sec.date:
+            label += f" ({sec.date})"
+        if sec.heading and sec.heading != sec.entry_title:
+            label += f" › {sec.heading}"
+        blocks.append(f"### From {label}\n{sec.body}")
     return "\n\n".join(blocks)
 
 
-def _published_context(
+def _continuity(
     config: Config,
     site_dir: Path | None,
     threads: list[Thread],
     initiatives: Initiatives,
-) -> str:
-    """Retrieve the owner's related past published entries and render them for
-    Stage B. Failure-tolerant like the indexer: continuity is a nice-to-have, so
-    any error (or a missing/empty site dir) yields no context and never blocks the
-    run. Disabled when ``content.continuity_max_entries`` is 0."""
+    week: str,
+) -> tuple[str, set[str]]:
+    """Section-level published-entry continuity. Returns the rendered Stage B block
+    (the top related past sections) and the set of referenced thread ids that
+    already have prior published coverage (for the presented-as-new check).
+
+    Failure-tolerant like the indexer: continuity is a nice-to-have, so any error
+    (or a missing/empty site dir) yields no context and never blocks the run.
+    Disabled when ``content.continuity_max_entries`` is 0. The current week's own
+    entry is excluded so a re-run never matches the draft against itself."""
     max_entries = config.content.continuity_max_entries
     if max_entries <= 0:
-        return ""
+        return "", set()
     if site_dir is None:
         site_dir = config.output.site_repo / config.output.site_devlog_dir
     try:
-        tokens = query_tokens_for(threads, initiatives.initiatives)
-        entries = retrieve_related(site_dir, tokens, max_entries=max_entries)
-    except Exception as exc:  # noqa: BLE001 — never let continuity abort the run
-        logger.warning("Published-entry continuity retrieval failed: %s", exc)
-        return ""
-    if entries:
-        logger.info(
-            "Continuity: feeding %d past published entr%s into Stage B",
-            len(entries),
-            "y" if len(entries) == 1 else "ies",
+        sections = load_sections(site_dir, exclude={week})
+        related = score_sections(
+            sections, query_tokens_for(threads, initiatives.initiatives), max_entries=max_entries
         )
-    return _render_published_context(entries)
+        covered = covered_thread_ids(sections, threads)
+    except Exception as exc:  # noqa: BLE001 — never let continuity abort the run
+        logger.warning("Published-entry continuity failed: %s", exc)
+        return "", set()
+    if related:
+        logger.info("Continuity: feeding %d past section(s) into Stage B", len(related))
+    return _render_published_context(related), covered
 
 
 def _write_failed(out_dir: Path, raw: str, name: str = "_failed_raw.txt") -> Path:
@@ -349,6 +368,7 @@ def _run_checks(
     config: Config,
     thread_ids: set[str],
     out_dir: Path,
+    covered_thread_ids: set[str] | None = None,
 ) -> list[CheckResult]:
     """Structural content-policy checks on the generated output (SPEC line 17).
     Persists the report (``checks.md`` for humans, ``checks.json`` for the eval
@@ -360,8 +380,13 @@ def _run_checks(
         forbidden_phrases=config.redaction.forbidden_phrases,
         placeholder=config.redaction.role_placeholder,
         thread_ids=thread_ids,
+        prior_thread_ids=covered_thread_ids,
     )
-    results = check_content(content, ctx) + check_initiatives(initiatives, ctx)
+    results = (
+        check_content(content, ctx)
+        + check_initiatives(initiatives, ctx)
+        + check_continuity(content, initiatives, ctx)
+    )
     (out_dir / "checks.md").write_text(_render_checks(results))
     (out_dir / "checks.json").write_text(json.dumps([asdict(r) for r in results], indent=2))
     for warning in failures(results, "warn"):
@@ -562,10 +587,11 @@ def transform_week(
     # the title is a bare subtitle and the site renders "<series> #N:".
     thread_context = _render_thread_context(initiatives, memories, due, week)
 
-    # Published-entry continuity: feed a few related PAST published entries (the
+    # Published-entry continuity: feed a few related PAST published sections (the
     # actual prose, not derived memory) so arcs connect across weeks. The current
     # threads are those active this week plus any an initiative references. The
-    # rendered prose is redacted before the call like every other model input.
+    # rendered prose is redacted before the call like every other model input;
+    # `covered` is the referenced threads already written about in a past entry.
     query_threads = list(candidates)
     seen_thread_ids = {t.id for t in query_threads}
     for init in initiatives.initiatives:
@@ -576,7 +602,7 @@ def transform_week(
         if thread is not None:
             query_threads.append(thread)
             seen_thread_ids.add(ref.id)
-    published_context = _published_context(config, site_dir, query_threads, initiatives)
+    published_context, covered = _continuity(config, site_dir, query_threads, initiatives, week)
     published_context, n_pc = redact(published_context, phrases)
     if n_pc:
         logger.info("Continuity: %d phrase occurrence(s) redacted before the API call", n_pc)
@@ -607,7 +633,7 @@ def transform_week(
     # invented link) HALTS the run so it never reaches a PR; the eval runner sets
     # enforce_checks=False to score failing cases without aborting.
     thread_ids = {t.id for mem in memories for t in mem.registry.threads}
-    results = _run_checks(content, initiatives, activity, config, thread_ids, out_dir)
+    results = _run_checks(content, initiatives, activity, config, thread_ids, out_dir, covered)
     errors = failures(results, "error")
     if errors:
         summary = "; ".join(f"{e.name} ({e.detail})" for e in errors)

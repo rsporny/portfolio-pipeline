@@ -360,4 +360,16 @@ block is redacted before the call like every model input, and the step is
 failure-tolerant: a missing/empty site dir or any error yields no context and
 never blocks the run. Bounded by `content.continuity_max_entries` (default 3, 0
 disables). From this release, versions are git-tagged as signed annotated tags
-`vMAJOR.MINOR.PATCH`. Next: v1.0 (see roadmap).
+`vMAJOR.MINOR.PATCH`.
+
+**v0.6.1** — continuity retrieval is now **section-level**. A weekly entry spans
+several `##` topics; v0.6.0 fed Stage B a top-of-entry excerpt, so the section
+continuing the current thread — often thousands of characters down — was missed
+and the entry re-introduced the topic as new. `continuity.py` now splits each
+past entry by `##`, scores per section (a section must overlap the query on its
+*heading*, keeping a multi-topic entry from matching on an unrelated section), and
+feeds the relevant section(s) whole. It also derives `covered_thread_ids` — the
+referenced threads that already have prior published coverage — which drives a new
+**advisory** check `continuity_not_reset` (`checks.py`): a section that continues a
+covered thread but frames it as brand new (*"new here", "first time", …*) is a
+warn, not a hard gate (framing is a judgement call). Next: v1.0 (see roadmap).

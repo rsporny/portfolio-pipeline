@@ -54,6 +54,24 @@ _URL_RE = re.compile(r"https?://[^\s\)\]\}>\"']+")
 # A GitHub @mention: an "@" that starts a handle and is not part of an email.
 _MENTION_RE = re.compile(r"(?<![\w/])@[A-Za-z0-9][A-Za-z0-9-]*")
 _HASHTAG_RE = re.compile(r"#\w+")
+_SECTION_RE = re.compile(r"^##[ \t]+(.+?)[ \t]*$", re.MULTILINE)
+_GITHUB_REPO_RE = re.compile(r"github\.com/([^/\s]+/[^/\s]+)")
+
+# Phrasings that frame a topic as appearing for the first time in the devlog. A
+# section that continues a thread already written about in a past published entry
+# must not use them — it should refer back instead. Advisory (a judgement call),
+# so this is a warn, not a hard gate.
+_NOVELTY = [
+    r"\bnew here\b",
+    r"\bthis is the first time\b",
+    r"\bfirst time (?:this|it) \w+ (?:appears|shows up|comes up)",
+    r"\bfirst appears? (?:here|in these)\b",
+    r"\bfirst appearance\b",
+    r"\bbrand[-\s]new\b",
+    r"\bmakes its (?:first )?(?:appearance|debut)\b",
+    r"\bfor the first time here\b",
+]
+_NOVELTY_RE = re.compile("|".join(_NOVELTY), re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -76,6 +94,10 @@ class CheckContext:
     forbidden_phrases: list[str] = field(default_factory=list)
     placeholder: str = "[collaborator]"
     thread_ids: frozenset[str] = frozenset()
+    # Ids of threads referenced this week that already have prior published
+    # coverage (a past entry wrote about them) — so re-introducing them as new is
+    # a continuity slip. Populated by the continuity retrieval; empty otherwise.
+    prior_thread_ids: frozenset[str] = frozenset()
 
 
 def activity_links(activity: Activity) -> set[str]:
@@ -105,6 +127,7 @@ def build_context(
     forbidden_phrases: list[str] | None = None,
     placeholder: str = "[collaborator]",
     thread_ids: set[str] | frozenset[str] | None = None,
+    prior_thread_ids: set[str] | frozenset[str] | None = None,
 ) -> CheckContext:
     """Assemble a :class:`CheckContext` from a week's activity and config values."""
     return CheckContext(
@@ -112,6 +135,7 @@ def build_context(
         forbidden_phrases=list(forbidden_phrases or []),
         placeholder=placeholder,
         thread_ids=frozenset(thread_ids or ()),
+        prior_thread_ids=frozenset(prior_thread_ids or ()),
     )
 
 
@@ -266,6 +290,70 @@ def check_initiatives(initiatives: Initiatives, ctx: CheckContext) -> list[Check
     )
 
     return results
+
+
+def _section_initiative(text: str, initiatives: Initiatives):
+    """The initiative a devlog section describes, matched by the proof-of-work URL
+    it cites (exact link first, then owner/repo). Mirrors the engine's section↔
+    initiative join so the check attributes a section to the right thread. Returns
+    ``None`` when it can't be attributed (then the section is left unflagged)."""
+    urls = _extract_urls(text)
+    for init in initiatives.initiatives:
+        if urls & set(init.links):
+            return init
+    repos = {m.group(1) for u in urls for m in [_GITHUB_REPO_RE.search(u)] if m}
+    for init in initiatives.initiatives:
+        init_repos = {m.group(1) for u in init.links for m in [_GITHUB_REPO_RE.search(u)] if m}
+        if repos & init_repos:
+            return init
+    return None
+
+
+def check_continuity(
+    content: Content, initiatives: Initiatives, ctx: CheckContext
+) -> list[CheckResult]:
+    """Advisory: a devlog section that continues a thread already written about in
+    a past published entry must not frame it as brand new. Each `##` section is
+    joined to its initiative by the proof-of-work link it cites; if that
+    initiative's ``thread_ref`` is in ``ctx.prior_thread_ids`` and the section uses
+    first-appearance phrasing, that is a continuity slip (warn, not a hard gate —
+    altitude/framing is a judgement call). Inert when there is no prior coverage
+    (e.g. a fresh instance, or the eval runner with no published history)."""
+    if not ctx.prior_thread_ids:
+        return [CheckResult("continuity_not_reset", True, "warn", "")]
+
+    devlog = content.devlog
+    heads = list(_SECTION_RE.finditer(devlog))
+    spans: list[tuple[str, str]] = []
+    if heads:
+        for i, m in enumerate(heads):
+            end = heads[i + 1].start() if i + 1 < len(heads) else len(devlog)
+            spans.append((m.group(1).strip(), devlog[m.end() : end]))
+    else:
+        spans = [("", devlog)]
+
+    offenders: list[str] = []
+    for heading, text in spans:
+        init = _section_initiative(text, initiatives)
+        if init is None or init.thread_ref is None:
+            continue
+        if init.thread_ref.id not in ctx.prior_thread_ids:
+            continue
+        hit = _NOVELTY_RE.search(text)
+        if hit:
+            where = f'"{heading}"' if heading else "the entry"
+            offenders.append(
+                f"{where} frames thread {init.thread_ref.id} as new ({hit.group(0)!r})"
+            )
+
+    return [
+        CheckResult(
+            "continuity_not_reset",
+            not offenders,
+            "warn",
+            "; ".join(offenders),
+        )
+    ]
 
 
 def failures(results: list[CheckResult], severity: Severity | None = None) -> list[CheckResult]:
