@@ -5,6 +5,7 @@ from pipeline.checks import (
     activity_links,
     build_context,
     check_content,
+    check_continuity,
     check_initiatives,
     failures,
 )
@@ -246,3 +247,74 @@ def test_failures_filters_by_severity():
     results = check_content(_content(social=f"{_words(3)} contact me"), _ctx())
     assert {r.name for r in failures(results, "error")} == {"no_solicitation"}
     assert "social_word_count" in {r.name for r in failures(results, "warn")}
+
+
+# --- check_continuity (presented-as-new advisory) ---------------------------
+
+
+def _inits_with_ref(thread_id="collector", link=LINK):
+    return Initiatives(
+        initiatives=[
+            _initiative(thread_ref=ThreadRef(id=thread_id, relation="continues"), links=[link])
+        ]
+    )
+
+
+def test_continuity_flags_reset_of_covered_thread():
+    """A section that continues a previously-published thread but frames it as new
+    is flagged (warn). The section is joined to its thread by its proof-of-work
+    link, so ``prior_thread_ids`` carries the covered thread's id."""
+    content = _content(devlog=f"## The collector\n\nAlso new here. {_words(20)} {LINK}")
+    ctx = _ctx(prior_thread_ids=frozenset({"collector"}))
+    r = _result(check_continuity(content, _inits_with_ref(), ctx), "continuity_not_reset")
+    assert not r.passed and r.severity == "warn"
+    assert "collector" in r.detail and "new here" in r.detail
+
+
+def test_continuity_passes_when_covered_thread_not_framed_as_new():
+    content = _content(
+        devlog=f"## The collector\n\nContinuing last week's work. {_words(20)} {LINK}"
+    )
+    ctx = _ctx(prior_thread_ids=frozenset({"collector"}))
+    assert _result(check_continuity(content, _inits_with_ref(), ctx), "continuity_not_reset").passed
+
+
+def test_continuity_passes_for_genuinely_new_thread():
+    """Novelty phrasing is fine for a thread with no prior published coverage."""
+    content = _content(devlog=f"## The collector\n\nThis is the first time. {_words(20)} {LINK}")
+    ctx = _ctx(prior_thread_ids=frozenset())  # nothing covered
+    assert _result(check_continuity(content, _inits_with_ref(), ctx), "continuity_not_reset").passed
+
+
+def test_continuity_only_flags_the_covered_thread_section():
+    """Two sections, only one continues a covered thread — the other's novelty
+    phrasing (a legitimately new thread) is left alone."""
+    other = "https://github.com/o/r/pull/6"
+    inits = Initiatives(
+        initiatives=[
+            _initiative(
+                name="Collector",
+                thread_ref=ThreadRef(id="collector", relation="continues"),
+                links=[LINK],
+            ),
+            _initiative(
+                name="Indexer",
+                thread_ref=ThreadRef(id="indexer", relation="continues"),
+                links=[other],
+            ),
+        ]
+    )
+    devlog = (
+        f"## The collector\n\nAlso new here. {_words(10)} {LINK}\n\n"
+        f"## The indexer\n\nBrand new this week. {_words(10)} {other}"
+    )
+    ctx = _ctx(activity_links={LINK, other}, prior_thread_ids=frozenset({"collector"}))
+    r = _result(check_continuity(_content(devlog=devlog), inits, ctx), "continuity_not_reset")
+    assert not r.passed
+    assert "collector" in r.detail and "indexer" not in r.detail
+
+
+def test_continuity_inert_without_prior_coverage():
+    # No coverage set → always a passing row (keeps the scorecard column stable).
+    r = _result(check_continuity(_content(), _inits_with_ref(), _ctx()), "continuity_not_reset")
+    assert r.passed and r.detail == ""

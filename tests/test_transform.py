@@ -1112,6 +1112,42 @@ def test_missing_site_dir_does_not_break_continuity(tmp_path):
     assert "your own earlier writing on related threads" not in llm.prompts[2]
 
 
+def test_continuity_check_flags_reset_in_transform(tmp_path):
+    """End to end: a thread with prior published coverage that Stage B frames as
+    new trips the advisory continuity_not_reset check in the draft's checks."""
+    raw_dir, drafts_dir = tmp_path / "raw", tmp_path / "drafts"
+    memory_root = tmp_path / "memory"
+    site_dir = tmp_path / "content" / "devlog"
+    week = _write_activity(raw_dir)
+    _seed_thread(memory_root)  # thread 'collector' (started W25), referenced below
+    _write_published(site_dir, "past", ["GitHub collector", "weekly activity"], "Collector prose.")
+    # Stage B continues the 'collector' thread (cites its initiative link, pull/6)
+    # but frames it as brand new.
+    reset_b = _stage_b_bad(
+        devlog=f"## Collector\n\nAlso new here. {_words_local(20)} https://github.com/o/r/pull/6"
+    )
+    llm = _FakeLLM([_stage_a_with_thread_ref(), _indexer(), reset_b])
+
+    out_dir = transform_week(
+        _config(),
+        llm,
+        raw_dir=raw_dir,
+        drafts_dir=drafts_dir,
+        week=week,
+        memory_root=memory_root,
+        site_dir=site_dir,
+    )
+
+    data = json.loads((out_dir / "checks.json").read_text())
+    r = next(c for c in data if c["name"] == "continuity_not_reset")
+    assert r["passed"] is False and r["severity"] == "warn"
+    assert "collector" in r["detail"] and "new here" in r["detail"]
+
+
+def _words_local(n: int) -> str:
+    return " ".join(["word"] * n)
+
+
 def test_published_continuity_is_redacted_before_stage_b(tmp_path):
     """The retrieved prose is redacted before the model call like every other
     input (hard constraint 5) — a forbidden phrase never reaches Stage B."""
