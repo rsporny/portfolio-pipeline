@@ -23,5 +23,8 @@ jobs:
       - name: Format check
         run: uv run ruff format --check .
 
+      - name: Docs format check
+        run: uv run mdformat --check README.md CLAUDE.md SPEC.md CHANGELOG.md
+
       - name: Tests
         run: uv run pytest

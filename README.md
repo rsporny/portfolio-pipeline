@@ -1,12 +1,14 @@
 # portfolio-pipeline
 
-Turn a week of real engineering work into content drafts — with a human in the loop.
+Turn a week of real engineering work into content drafts — with a human in the
+loop.
 
 Once a week this collects my public development activity (commits, PRs, closed
 issues from GitHub), then uses the Claude API in a two-stage process to write a
-**devlog** entry, a **social post**, and a list of **highlights**. Drafts land in
-an editorial queue as a pull request; nothing is published until I review and
-merge. The output feeds the devlog on [sporny.pl](https://sporny.pl/devlog.html).
+**devlog** entry, a **social post**, and a list of **highlights**. Drafts land
+in an editorial queue as a pull request; nothing is published until I review and
+merge. The output feeds the devlog on
+[sporny.pl](https://sporny.pl/devlog.html).
 
 This is a building-in-public experiment: a practical look at wiring AI into a
 real engineering workflow, with a human gate at the end. The repo is the subject
@@ -38,49 +40,50 @@ can automate their own devlog.
 
 ## Human in the loop
 
-**Nothing is ever published automatically.** The pipeline's job ends at proposing
-drafts. In the automated flow, the weekly Action only *opens* a pull request — it
-never merges. The merge is the manual approval, and it's where I review the actual
-content (and can edit it) before Cloudflare deploys. In the local flow, `publish`
-operates only on files I've deliberately moved into `approved/`.
+**Nothing is ever published automatically.** The pipeline's job ends at
+proposing drafts. In the automated flow, the weekly Action only *opens* a pull
+request — it never merges. The merge is the manual approval, and it's where I
+review the actual content (and can edit it) before Cloudflare deploys. In the
+local flow, `publish` operates only on files I've deliberately moved into
+`approved/`.
 
 ## Memory: threads & assumptions
 
-Weekly snapshots are forgettable; arcs are not. The pipeline keeps a **memory** —
-plain, versioned files under `memory/{org}/{repo}/` — so entries connect into
+Weekly snapshots are forgettable; arcs are not. The pipeline keeps a **memory**
+— plain, versioned files under `memory/{org}/{repo}/` — so entries connect into
 longer stories instead of isolated weekly dumps. It tracks two things:
 
-- **Threads:** ongoing lines of work (a feature, a refactor, an experiment). Each
-  week an *indexer* pass reads the fresh activity and proposes which threads it
-  continues or starts, so a later entry can say "the thing I started three weeks
-  ago" rather than reintroducing it cold.
+- **Threads:** ongoing lines of work (a feature, a refactor, an experiment).
+  Each week an *indexer* pass reads the fresh activity and proposes which
+  threads it continues or starts, so a later entry can say "the thing I started
+  three weeks ago" rather than reintroducing it cold.
 - **Assumptions:** a lightweight, dated decision journal per thread — explicit
-  bets, revisited later. A falsified assumption is content gold: the writing stage
-  is told about it, because "I assumed X, then it broke" is a better story than a
-  clean narrative.
+  bets, revisited later. A falsified assumption is content gold: the writing
+  stage is told about it, because "I assumed X, then it broke" is a better story
+  than a clean narrative.
 
 Crucially, **the model proposes and code disposes**: the indexer only emits
-*proposed* mutations, which validated code applies to `memory/` deterministically.
-The model never writes memory files directly. The registry is committed to the
-instance (the site repo, under `state.root`), so every arc is transparent and
-reviewable in git history.
+*proposed* mutations, which validated code applies to `memory/`
+deterministically. The model never writes memory files directly. The registry is
+committed to the instance (the site repo, under `state.root`), so every arc is
+transparent and reviewable in git history.
 
 **Deep context, selectively.** An active thread earns richer signal: for a repo
 with an ongoing thread, the collector also pulls each of my PRs' *review
-discussion* and *linked issues*, so the writing can draw on the "why" — the intent
-a reviewer surfaced, the problem an issue described — not just the commit message.
-It is fetched only where an arc exists (cost and noise control), used for
-understanding only, and **never quoted**. Because `raw/` is a public repo, every
-third-party name (logins, `@mentions`, `Co-authored-by`) is masked to
+discussion* and *linked issues*, so the writing can draw on the "why" — the
+intent a reviewer surfaced, the problem an issue described — not just the commit
+message. It is fetched only where an arc exists (cost and noise control), used
+for understanding only, and **never quoted**. Because `raw/` is a public repo,
+every third-party name (logins, `@mentions`, `Co-authored-by`) is masked to
 `[collaborator]` *before* the snapshot is written — the model, and the git
 history, only ever see anonymized text.
 
 ## Allowlist only (by design)
 
-The collector scans **only** the repositories explicitly listed in
-`config.yaml` under `repos.allowlist`. There is no "scan everything" mode, and
-the default is deny. Only public/open-source repositories, or my own private
-repositories, may be listed.
+The collector scans **only** the repositories explicitly listed in `config.yaml`
+under `repos.allowlist`. There is no "scan everything" mode, and the default is
+deny. Only public/open-source repositories, or my own private repositories, may
+be listed.
 
 This is deliberate: a tool that reads your development activity should read
 exactly what you tell it to and nothing more. It keeps the blast radius small,
@@ -93,10 +96,10 @@ The content policy (no solicitation, never name a collaborator, claim only what
 the activity supports) lives in the prompts — but prompts are guidance, not a
 guarantee. Since v0.4 a small **pure check library** (`src/pipeline/checks.py`)
 verifies the output *structurally*: word limits, hashtag budget, no
-solicitation/CTA, no leaked `@mention` or anonymization placeholder, no forbidden
-phrase, and **faithfulness** — every URL the devlog cites must exist in that
-week's collected activity, and initiatives may invent no links. Each check is
-either `error` (hard policy) or `warn` (soft quality).
+solicitation/CTA, no leaked `@mention` or anonymization placeholder, no
+forbidden phrase, and **faithfulness** — every URL the devlog cites must exist
+in that week's collected activity, and initiatives may invent no links. Each
+check is either `error` (hard policy) or `warn` (soft quality).
 
 Two places use it, one implementation:
 
@@ -105,10 +108,10 @@ Two places use it, one implementation:
   `error`-severity failure** — a solicitation, a leaked name, or an invented
   proof-of-work link never reaches a PR. The offending drafts stay on disk so I
   can see what the model did.
-- **Golden runner.** `pipeline eval` runs the real transformer over curated cases
-  in `evals/cases/` (a plain weekly entry, a thread that continues, a two-thread
-  focus, and a PR carrying anonymized review discussion), scores each with the
-  same checks, and writes a committed scorecard at
+- **Golden runner.** `pipeline eval` runs the real transformer over curated
+  cases in `evals/cases/` (a plain weekly entry, a thread that continues, a
+  two-thread focus, and a PR carrying anonymized review discussion), scores each
+  with the same checks, and writes a committed scorecard at
   [`evals/RESULTS.md`](evals/RESULTS.md).
 
 In CI, `.github/workflows/evals.yml` runs the golden runner on demand
@@ -122,22 +125,22 @@ fork-PR workflows, and this one does not run on them at all).
 ## Provenance: verify it yourself (v0.5)
 
 Every published entry can be checked two ways — **who** wrote it and **when** it
-existed — by anyone, with only public material and off-the-shelf tools. Each entry
-is an **independent** proof: one file, one hash, one transaction — no merkle tree,
-no bundle to download.
+existed — by anyone, with only public material and off-the-shelf tools. Each
+entry is an **independent** proof: one file, one hash, one transaction — no
+merkle tree, no bundle to download.
 
-- **The hash is the file.** An entry's commitment is the plain `sha256` of its raw
-  `<slug>.md`, exactly as served — so `sha256sum` reproduces it. Provenance is kept
-  out of the `.md` (in the manifest + the sidecar) precisely so the file's bytes
-  stay the hash.
+- **The hash is the file.** An entry's commitment is the plain `sha256` of its
+  raw `<slug>.md`, exactly as served — so `sha256sum` reproduces it. Provenance
+  is kept out of the `.md` (in the manifest + the sidecar) precisely so the
+  file's bytes stay the hash.
 - **Signed entries.** Before merging a devlog PR I GPG-sign that raw file (my
-  YubiKey, on the PR branch) — the signature ships in the same PR and **no signing
-  key is ever in CI**. Because the signature is over the file itself, plain
-  `gpg --verify` checks it.
+  YubiKey, on the PR branch) — the signature ships in the same PR and **no
+  signing key is ever in CI**. Because the signature is over the file itself,
+  plain `gpg --verify` checks it.
 - **Anchored per entry (testnet).** Each entry's hash is written into a Cardano
   testnet transaction's metadata (`{slug, sha256, v}`) — a pluggable backend
-  (`null` by default, `file` for dev, or `cardano`). Open the transaction and you
-  see the same hash.
+  (`null` by default, `file` for dev, or `cardano`). Open the transaction and
+  you see the same hash.
 
 Check it with universal tools — no clone, no Python:
 
@@ -157,7 +160,8 @@ pipeline provenance show --slug 2026-W27   # file hash, signature, anchor
 `verify` recomputes each hash from the *actual* published file, so a post-hoc
 edit fails loudly. `.github/workflows/provenance.yml` runs it **offline, with no
 secrets** as an integrity gate. The engine never anchors mainnet, never merges,
-and never publishes — provenance only adds proof to what a human already reviewed.
+and never publishes — provenance only adds proof to what a human already
+reviewed.
 
 ## Quickstart
 
@@ -184,11 +188,11 @@ uv run pipeline eval               # score the transformer over the golden cases
 uv run pytest                      # the tests are part of the story
 ```
 
-Weekly automation lives in `.github/workflows/weekly.yml` — see SPEC.md
-Module 5. Since v0.4.1 the engine is **stateless**: it runs against the site repo
-as its `state.root` and opens **one** PR that bundles the rendered devlog with
-that week's `raw/` activity snapshot and `memory/` updates — the audit trail and
-the seed for next week's continuity, now living with the instance rather than
+Weekly automation lives in `.github/workflows/weekly.yml` — see SPEC.md Module
+5\. Since v0.4.1 the engine is **stateless**: it runs against the site repo as
+its `state.root` and opens **one** PR that bundles the rendered devlog with that
+week's `raw/` activity snapshot and `memory/` updates — the audit trail and the
+seed for next week's continuity, now living with the instance rather than
 committed back to the engine repo. Merging the PR publishes. A manual
 `workflow_dispatch` run accepts an optional `focus` input to lead the entry on
 specific thread(s); the scheduled run lets the model pick.
@@ -198,10 +202,10 @@ specific thread(s); the scheduled run lets the model pick.
 To run the automation on your own fork, set three **repository secrets** under
 *Settings → Secrets and variables → Actions → New repository secret*:
 
-| Secret | What | Scope to grant |
-| --- | --- | --- |
-| `ANTHROPIC_API_KEY` | Claude API key | — |
-| `GH_ACTIVITY_TOKEN` | Fine-grained PAT | **read-only** contents/PRs/issues on your allowlisted repos |
+| Secret               | What             | Scope to grant                                                                          |
+| -------------------- | ---------------- | --------------------------------------------------------------------------------------- |
+| `ANTHROPIC_API_KEY`  | Claude API key   | —                                                                                       |
+| `GH_ACTIVITY_TOKEN`  | Fine-grained PAT | **read-only** contents/PRs/issues on your allowlisted repos                             |
 | `LANDING_PAGE_TOKEN` | Fine-grained PAT | **write** on your website repo — enough to push a branch and open a PR, **never** merge |
 
 The token scopes are deliberately minimal: the pipeline reads only what you list
@@ -210,36 +214,38 @@ stays a human action.
 
 Two more one-time changes so the Action targets *your* site, not mine:
 
-- **Your instance = your site repo.** The engine is stateless; your instance lives
-  in your website repo, which holds its own `config.yaml` (with `state.root: "."`
-  and `output.site_repo_path: "."`), its `raw/` + `memory/` state, and `content/`.
-  Point `weekly.yml`'s `repository:` and PR steps at that repo, gitignore the
-  `drafts/`/`approved/`/`published/` working dirs there, and make sure
-  `output.adapter` resolves an adapter that renders *your* site's schema (see
-  [Fork it: write an adapter](#fork-it-write-an-adapter)).
-- **No engine write-back.** The engine commits nothing to its own repo, so it needs
-  no `contents: write` there; the single weekly PR (devlog + `raw/` + `memory/`)
-  goes to your site repo via `LANDING_PAGE_TOKEN`, and a human merges to publish.
+- **Your instance = your site repo.** The engine is stateless; your instance
+  lives in your website repo, which holds its own `config.yaml` (with
+  `state.root: "."` and `output.site_repo_path: "."`), its `raw/` + `memory/`
+  state, and `content/`. Point `weekly.yml`'s `repository:` and PR steps at that
+  repo, gitignore the `drafts/`/`approved/`/`published/` working dirs there, and
+  make sure `output.adapter` resolves an adapter that renders *your* site's
+  schema (see [Fork it: write an adapter](#fork-it-write-an-adapter)).
+- **No engine write-back.** The engine commits nothing to its own repo, so it
+  needs no `contents: write` there; the single weekly PR (devlog + `raw/` +
+  `memory/`) goes to your site repo via `LANDING_PAGE_TOKEN`, and a human merges
+  to publish.
 
-The schedule is a `cron` in `weekly.yml` (Sundays 16:00 UTC); adjust to taste, or
-trigger a run by hand from the Actions tab (*Run workflow*), optionally passing
-`since` for a backfill and `focus` to lead on specific thread(s).
+The schedule is a `cron` in `weekly.yml` (Sundays 16:00 UTC); adjust to taste,
+or trigger a run by hand from the Actions tab (*Run workflow*), optionally
+passing `since` for a backfill and `focus` to lead on specific thread(s).
 
 **Eval workflow (optional, uses the model).** `evals.yml` calls the paid API. It
 reuses the same `ANTHROPIC_API_KEY` **repo secret** as the weekly Action — no
 separate secret needed. Because a fork PR never receives repo secrets and this
-workflow doesn't run on `pull_request`, an outside contributor can't spend the key
-regardless.
+workflow doesn't run on `pull_request`, an outside contributor can't spend the
+key regardless.
 
 The `evals` **environment** the workflow references adds one thing on top: a
 manual **approval gate**. Create an environment named `evals` (*Settings →
-Environments*) and add a **required reviewer** — the eval job then pauses until you
-approve it, so an expensive run never fires unattended (e.g. on a `main` push that
-touches a prompt). You do **not** move the key into the environment: the approval
-gate comes from the job referencing the environment, while `secrets.ANTHROPIC_API_KEY`
-still resolves to your repo secret. (You *may* add a separate environment-scoped
-key if you want one you can rotate independently — if you do, remember the
-environment copy is the one the eval job uses.) Set a spend cap on the key too.
+Environments*) and add a **required reviewer** — the eval job then pauses until
+you approve it, so an expensive run never fires unattended (e.g. on a `main`
+push that touches a prompt). You do **not** move the key into the environment:
+the approval gate comes from the job referencing the environment, while
+`secrets.ANTHROPIC_API_KEY` still resolves to your repo secret. (You *may* add a
+separate environment-scoped key if you want one you can rotate independently —
+if you do, remember the environment copy is the one the eval job uses.) Set a
+spend cap on the key too.
 
 ## Sample draft
 
@@ -289,17 +295,17 @@ sequence across both types, assigned by the site adapter and frozen once set
 (re-runs never renumber). Weekly titles are a bare subtitle — the site renders
 `Senior SDET log #<n>: <subtitle>` — so nothing hand-bakes a number.
 
-To add a custom note or essay, write a plain Markdown file whose first `# H1`
-is the title, then run:
+To add a custom note or essay, write a plain Markdown file whose first `# H1` is
+the title, then run:
 
 ```bash
 pipeline publish-custom looking-ahead-2036.md --site-repo ~/code/sporny.pl
 ```
 
-That drops a fully-formed `content/devlog/looking-ahead-2036.md` into the website
-repo (front matter, `type: custom`, the next series number) and regenerates
-`index.json`. It never commits or pushes — you verify locally and merge, exactly
-like the weekly PR. See
+That drops a fully-formed `content/devlog/looking-ahead-2036.md` into the
+website repo (front matter, `type: custom`, the next series number) and
+regenerates `index.json`. It never commits or pushes — you verify locally and
+merge, exactly like the weekly PR. See
 [SPEC.md → Module 4](SPEC.md#manifest-schema-contentdevlogindexjson-owned-by-the-website)
 for the full schema and authoring details.
 
