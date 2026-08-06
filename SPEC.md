@@ -513,8 +513,13 @@ library (`src/pipeline/checks.py`): structural **property assertions** — valid
 schema (Pydantic), word limits, hashtag budget, no solicitation/CTA, no leaked
 collaborator (`@mention` / placeholder), no forbidden phrase, and
 **faithfulness** (every cited URL exists in the week's activity; initiatives
-invent no links). Each check is `error` (hard content policy) or `warn` (soft
-quality).
+invent no links). A few advisory (`warn`) checks judge framing rather than
+policy: continuity (a thread with prior published coverage is not reintroduced
+as new) and **reader altitude** (a section is not written at PR-description
+altitude — flagged when it is dense with code-level mechanics or leans on
+undefined domain jargon; Stage B guidance steers toward "what changed and why it
+matters"). Each check is `error` (hard content policy) or `warn` (soft quality /
+judgement call).
 
 - **In production**, `transform_week` runs the checks after Stage B, writes a
   `checks.md`/`checks.json` report into the draft bundle, logs warnings, and
@@ -522,9 +527,9 @@ quality).
   name, or an invented link never reaches a PR (the drafts stay on disk for
   inspection).
 - **Golden runner**: `pipeline eval` runs the real transformer over curated
-  `evals/cases/**` (baseline, thread continuity, focus, anonymized deep
-  context), scores each with the same checks, and writes a committed Markdown
-  scorecard (`evals/RESULTS.md`).
+  `evals/cases/**` (baseline, thread continuity, focus, anonymized deep context,
+  over-detailed activity), scores each with the same checks, and writes a
+  committed Markdown scorecard (`evals/RESULTS.md`).
 - **CI**: `.github/workflows/evals.yml` runs the golden runner on
   `workflow_dispatch` and on `push` to `main` touching the prompt/model surface.
   It is the only workflow holding `ANTHROPIC_API_KEY`, kept behind a protected
@@ -551,13 +556,6 @@ next.
   transaction); add a same-origin **Cloudflare Worker → Koios** (keyless) proxy
   so the badge confirms the hash against Cardano live, without exposing an API
   key or hitting browser CORS limits.
-- **reader-altitude guard** — keep each generated section pitched to a reader
-  who doesn't know the repo. A new *advisory* check in `src/pipeline/checks.py`
-  flags sections that reproduce PR-description-level mechanics or lean on
-  undefined domain jargon, and Stage B guidance steers toward "what changed and
-  why it matters" over blow-by-blow internals. Adds an over-detailed golden case
-  to `evals/cases/`. Advisory (scored, reported) rather than a hard block —
-  altitude is a judgement call, unlike the existing content-policy gates.
 - **v1.0** — experiment: ZK-based verifiable claims about private activity
   (Midnight).
 

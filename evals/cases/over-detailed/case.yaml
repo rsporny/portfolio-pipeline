@@ -1,0 +1,5 @@
+description: "Low-level, mechanics-heavy activity that tempts a PR-description-altitude write-up."
+github_user: rsporny
+allowlist: [o/gateway]
+descriptions:
+  o/gateway: "An API gateway service (Python) sitting in front of internal backends."

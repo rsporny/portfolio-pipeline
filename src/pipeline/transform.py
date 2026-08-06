@@ -13,6 +13,7 @@ from pydantic import BaseModel, ValidationError
 from .checks import (
     CheckResult,
     build_context,
+    check_altitude,
     check_content,
     check_continuity,
     check_initiatives,
@@ -446,6 +447,7 @@ def _run_checks(
         check_content(content, ctx)
         + check_initiatives(initiatives, ctx)
         + check_continuity(content, initiatives, ctx)
+        + check_altitude(content)
     )
     (out_dir / "checks.md").write_text(_render_checks(results))
     (out_dir / "checks.json").write_text(json.dumps([asdict(r) for r in results], indent=2))

@@ -1,0 +1,73 @@
+{
+  "schema_version": 4,
+  "generated_at": "2026-07-26T16:00:00Z",
+  "since": "2026-07-19T16:00:00Z",
+  "until": "2026-07-26T16:00:00Z",
+  "week": "2026-W30",
+  "repos": [
+    {
+      "repo": "o/gateway",
+      "commits": [
+        {
+          "sha": "a1",
+          "date": "2026-07-20T09:00:00Z",
+          "message": "Extract TokenBucket.consume() out of middleware/ratelimit.py into limiter/bucket.py",
+          "url": "https://github.com/o/gateway/commit/a1",
+          "files": [
+            {"filename": "middleware/ratelimit.py", "additions": 12, "deletions": 88, "changes": 100},
+            {"filename": "limiter/bucket.py", "additions": 96, "deletions": 0, "changes": 96}
+          ]
+        },
+        {
+          "sha": "a2",
+          "date": "2026-07-21T11:00:00Z",
+          "message": "Wire RedisStore.incr_ttl() into Limiter.__init__ and drop the in-proc dict",
+          "url": "https://github.com/o/gateway/commit/a2",
+          "files": [
+            {"filename": "limiter/store.py", "additions": 74, "deletions": 9, "changes": 83},
+            {"filename": "limiter/bucket.py", "additions": 18, "deletions": 6, "changes": 24}
+          ]
+        },
+        {
+          "sha": "a3",
+          "date": "2026-07-23T14:00:00Z",
+          "message": "Add fail-open path in Limiter.check() when RedisStore raises ConnErr; emit ratelimit_store_down metric",
+          "url": "https://github.com/o/gateway/commit/a3",
+          "files": [
+            {"filename": "limiter/bucket.py", "additions": 31, "deletions": 4, "changes": 35},
+            {"filename": "metrics.py", "additions": 8, "deletions": 0, "changes": 8}
+          ]
+        },
+        {
+          "sha": "a4",
+          "date": "2026-07-24T10:00:00Z",
+          "message": "Tests for TokenBucket.consume(), RedisStore.incr_ttl() TTL rollover, and the fail-open branch",
+          "url": "https://github.com/o/gateway/commit/a4",
+          "files": [
+            {"filename": "tests/test_bucket.py", "additions": 140, "deletions": 0, "changes": 140}
+          ]
+        }
+      ],
+      "pull_requests": [
+        {
+          "number": 210,
+          "title": "Move token-bucket rate limiting to a shared Redis store with a fail-open path",
+          "description": "Refactors middleware/ratelimit.py: TokenBucket.consume() moves to limiter/bucket.py, and Limiter now reads its counter from RedisStore.incr_ttl() (INCR + EXPIRE in one round-trip) instead of a per-process dict, so the per-tenant RPS limit holds across all gateway instances. Limiter.check() gains a fail-open branch: on a RedisStore ConnErr it allows the request and emits the ratelimit_store_down metric rather than 500-ing the tenant. Closes #201.",
+          "labels": ["reliability", "rate-limiting"],
+          "state": "closed",
+          "url": "https://github.com/o/gateway/pull/210",
+          "merged_at": "2026-07-25T12:00:00Z",
+          "outcome": "merged",
+          "review_comments": [
+            {"body": "If RedisStore is down should check() fail open or fail closed?", "author_role": "other", "kind": "review"},
+            {"body": "Fail open, with the ratelimit_store_down metric so we can watch it. Failing closed would 500 every tenant on a blip.", "author_role": "owner", "kind": "conversation"}
+          ],
+          "linked_issues": [
+            {"number": 201, "title": "Rate limit is per-instance, so the effective RPS is N times the configured limit", "url": "https://github.com/o/gateway/issues/201", "state": "closed", "relation": "closes"}
+          ]
+        }
+      ],
+      "issues": []
+    }
+  ]
+}

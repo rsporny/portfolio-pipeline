@@ -2,8 +2,10 @@ from datetime import UTC, datetime
 
 from pipeline.checks import (
     CheckContext,
+    _devlog_sections,
     activity_links,
     build_context,
+    check_altitude,
     check_content,
     check_continuity,
     check_initiatives,
@@ -318,3 +320,71 @@ def test_continuity_inert_without_prior_coverage():
     # No coverage set → always a passing row (keeps the scorecard column stable).
     r = _result(check_continuity(_content(), _inits_with_ref(), _ctx()), "continuity_not_reset")
     assert r.passed and r.detail == ""
+
+
+# --- _devlog_sections (shared splitter) -------------------------------------
+
+
+def test_devlog_sections_splits_on_headings():
+    secs = _devlog_sections("## A\n\nbody a\n\n## B\n\nbody b")
+    assert [h for h, _ in secs] == ["A", "B"]
+    assert secs[0][1].strip() == "body a"
+
+
+def test_devlog_sections_unheaded_fallback():
+    assert _devlog_sections("no headings here") == [("", "no headings here")]
+
+
+# --- check_altitude (reader-altitude guard, advisory) -----------------------
+
+
+def test_altitude_passes_on_baseline():
+    r = _result(check_altitude(_content()), "reader_altitude")
+    assert r.passed and r.severity == "warn" and r.detail == ""
+
+
+def test_altitude_flags_mechanics_dense_section():
+    """A section that reads like a PR description — file paths, call syntax, dotted
+    identifiers, code spans — trips the guard (warn)."""
+    devlog = (
+        "## Deep dive\n\n"
+        "First `TokenBucket.consume` moved to limiter/bucket.py, then "
+        "Limiter.check() reads RedisStore.incr_ttl() from store.py, and "
+        f"config.load() wires metrics.py while `EXPIRE` sets it. {_words(15)} {LINK}"
+    )
+    r = _result(check_altitude(_content(devlog=devlog)), "reader_altitude")
+    assert not r.passed and r.severity == "warn"
+    assert "Deep dive" in r.detail and "mechanics" in r.detail
+
+
+def test_altitude_flags_undefined_jargon_cluster():
+    devlog = f"## Design\n\nThe RL uses a CRDT over the WAL and the LSM. {_words(20)} {LINK}"
+    r = _result(check_altitude(_content(devlog=devlog)), "reader_altitude")
+    assert not r.passed
+    assert "jargon" in r.detail and "CRDT" in r.detail
+
+
+def test_altitude_allows_common_and_defined_acronyms():
+    """Common acronyms are never jargon, and an acronym glossed on first use (in
+    parentheses) does not count as undefined."""
+    devlog = (
+        "## Notes\n\nThe API and CI run in QA; a conflict-free replicated data type "
+        f"(CRDT) backs the store. {_words(20)} {LINK}"
+    )
+    assert _result(check_altitude(_content(devlog=devlog)), "reader_altitude").passed
+
+
+def test_altitude_ignores_proof_of_work_url():
+    """A section whose only slashes and dots come from its proof-of-work link stays
+    clean — the URL is stripped before mechanics are counted."""
+    devlog = f"## Update\n\nThe retry work shipped and it holds under load. {_words(20)} see {LINK}"
+    assert _result(check_altitude(_content(devlog=devlog)), "reader_altitude").passed
+
+
+def test_altitude_social_has_stricter_mechanics_bar():
+    social = (
+        "Refactored Limiter.check() to call RedisStore.incr_ttl() from store.py "
+        f"and bucket.py this week. {_words(25)}"
+    )
+    r = _result(check_altitude(_content(social=social)), "reader_altitude")
+    assert not r.passed and "social" in r.detail
