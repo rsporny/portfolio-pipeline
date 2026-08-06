@@ -4,9 +4,10 @@ import json
 import logging
 import re
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, ValidationError
 
@@ -69,19 +70,56 @@ class RepoMemory:
     changed: bool = False
 
 
-# Longest thread-summary snippet shown next to a focus candidate.
-_FOCUS_SNIPPET_CHARS = 140
+# How each kind of cited work is labelled, and the order kinds are listed in (a
+# PR states the intent of the commits under it, so it leads).
+_WORK_KINDS = {"pr": "PR", "issue": "issue", "commit": "commit"}
+
+
+def _norm_url(url: str) -> str:
+    """A URL reduced to a comparable key. A model-written link picks up trailing
+    punctuation from prose or a trailing slash, and may differ in case from the
+    collected one (GitHub resolves ``owner/repo`` case-insensitively) — none of
+    which should stop a link resolving to the work it cites."""
+    return url.strip().rstrip(").,;:").rstrip("/").casefold()
+
+
+@dataclass(frozen=True)
+class WorkItem:
+    """One concrete piece of this week's activity, resolved from an initiative's
+    proof-of-work link back to the PR/issue/commit the collector recorded — the
+    owner's own words, which is what a reviewer actually recognises."""
+
+    kind: Literal["pr", "issue", "commit"]
+    ref: str  # "#5" | "#1901" | "3f1a9c2"
+    title: str  # PR/issue title, or a commit's subject line
+    note: str = ""  # "open" | "closed unmerged"; empty for merged/plain
+
+    @property
+    def label(self) -> str:
+        return f"{_WORK_KINDS[self.kind]} {self.ref}"
+
+
+@dataclass(frozen=True)
+class InitiativeWork:
+    """This week's cited work for one thread, under the initiative that produced
+    it — so the picker also shows why that work was grouped together."""
+
+    name: str
+    items: list[WorkItem]
 
 
 @dataclass
 class FocusCandidate:
     """A thread offered to the focus picker, with the context a human needs to tell
-    terse or near-identical titles apart: its status, age (whole weeks since it
-    started), how this week's work relates to it, and a summary snippet."""
+    terse or near-identical titles apart: its repo, status, age (whole weeks since
+    it started), how this week's work relates to it, and — the part that actually
+    identifies it — the concrete work cited for it this week."""
 
     thread: Thread
     relation: str  # this week's relation ("continues"/"pivots"/… or "new this week")
     age_weeks: int  # whole weeks since started_week; 0 == new this week
+    repo: str = ""  # the repo whose registry holds the thread
+    work: list[InitiativeWork] = field(default_factory=list)
 
     @property
     def id(self) -> str:
@@ -92,13 +130,6 @@ class FocusCandidate:
         if self.age_weeks <= 0:
             return "new this week"
         return "1 week old" if self.age_weeks == 1 else f"{self.age_weeks} weeks old"
-
-    @property
-    def summary_snippet(self) -> str:
-        summary = " ".join(self.thread.summary.split())
-        if len(summary) <= _FOCUS_SNIPPET_CHARS:
-            return summary
-        return summary[: _FOCUS_SNIPPET_CHARS - 1].rstrip() + "…"
 
 
 def _repo_context(config: Config, activity: Activity) -> str:
@@ -260,22 +291,95 @@ def _active_threads(memories: list[RepoMemory], week: str) -> list[Thread]:
     return active
 
 
+def _work_index(activity: Activity) -> dict[str, WorkItem]:
+    """Every PR, issue and commit collected this week, keyed by its normalised URL,
+    so an initiative's proof-of-work link resolves back to the concrete work it
+    cites. A PR's ``outcome`` is carried through as a note — an unmerged PR must
+    never read like shipped work, in the picker as much as in the entry."""
+    notes = {"merged": "", "open": "open", "closed_unmerged": "closed unmerged"}
+    index: dict[str, WorkItem] = {}
+    for repo_activity in activity.repos:
+        for pr in repo_activity.pull_requests:
+            index[_norm_url(pr.url)] = WorkItem(
+                kind="pr", ref=f"#{pr.number}", title=pr.title, note=notes.get(pr.outcome, "")
+            )
+        for issue in repo_activity.issues:
+            index[_norm_url(issue.url)] = WorkItem(
+                kind="issue", ref=f"#{issue.number}", title=issue.title
+            )
+        for commit in repo_activity.commits:
+            subject = commit.message.strip().splitlines()[0] if commit.message.strip() else ""
+            index[_norm_url(commit.url)] = WorkItem(
+                kind="commit", ref=commit.sha[:7], title=subject
+            )
+    index.pop("", None)  # an item collected without a URL is not addressable
+    return index
+
+
+def _thread_work(
+    initiatives: Initiatives, index: dict[str, WorkItem], thread_id: str
+) -> list[InitiativeWork]:
+    """This week's cited work for one thread, grouped by the initiative that
+    produced it. Attribution comes only from the links of initiatives that
+    reference the thread, so every item shown provably belongs to it; a link that
+    resolves to nothing collected is dropped rather than guessed at (Stage A can
+    cite a URL that is not a PR/issue/commit, and the check suite already gates
+    invented ones). Deduped across the whole thread — two initiatives citing the
+    same PR list it once."""
+    order = list(_WORK_KINDS)
+    seen: set[str] = set()
+    groups: list[InitiativeWork] = []
+    for init in initiatives.initiatives:
+        if init.thread_ref is None or init.thread_ref.id != thread_id:
+            continue
+        items: list[WorkItem] = []
+        for link in init.links:
+            key = _norm_url(link)
+            item = index.get(key)
+            if item is None or key in seen:
+                continue
+            seen.add(key)
+            items.append(item)
+        if items:
+            items.sort(key=lambda i: order.index(i.kind))
+            groups.append(InitiativeWork(name=init.name, items=items))
+    return groups
+
+
 def _focus_candidates(
-    threads: list[Thread], initiatives: Initiatives, week: str
+    threads: list[Thread],
+    initiatives: Initiatives,
+    activity: Activity,
+    memories: list[RepoMemory],
+    week: str,
 ) -> list[FocusCandidate]:
-    """Wrap this week's active threads with the picker context: this week's
-    relation (from an initiative's ``thread_ref``, else "new this week" for one
-    that just started) and age in whole weeks."""
+    """Wrap this week's active threads with the picker context: the repo the thread
+    lives in, this week's relation (from an initiative's ``thread_ref``, else "new
+    this week" for one that just started), age in whole weeks, and the concrete
+    work cited for it this week."""
     relation_by_id = {
         init.thread_ref.id: init.thread_ref.relation
         for init in initiatives.initiatives
         if init.thread_ref is not None
     }
+    repo_by_id: dict[str, str] = {}
+    for mem in memories:  # first registry wins, matching `_active_threads`' dedupe
+        for thread in mem.registry.threads:
+            repo_by_id.setdefault(thread.id, mem.repo)
+    index = _work_index(activity)
     candidates: list[FocusCandidate] = []
     for thread in threads:
         age = weeks_between(thread.started_week, week) if thread.started_week else 0
         relation = relation_by_id.get(thread.id) or ("new this week" if age <= 0 else "active")
-        candidates.append(FocusCandidate(thread=thread, relation=relation, age_weeks=age))
+        candidates.append(
+            FocusCandidate(
+                thread=thread,
+                relation=relation,
+                age_weeks=age,
+                repo=repo_by_id.get(thread.id, ""),
+                work=_thread_work(initiatives, index, thread.id),
+            )
+        )
     return candidates
 
 
@@ -496,8 +600,9 @@ def _section_init(body: str, initiatives: Initiatives) -> Initiative | None:
     Exact-URL match first — two sections can share a repo yet differ in category, so
     the specific link is the reliable key — then fall back to ``owner/repo``."""
     urls = {u.rstrip(").,;:") for u in _URL_RE.findall(body)}
+    keys = {_norm_url(u) for u in urls}
     for init in initiatives.initiatives:
-        if urls & set(init.links):
+        if keys & {_norm_url(link) for link in init.links}:
             return init
     repos = {m.group(1) for u in urls for m in [_GITHUB_REPO.search(u)] if m}
     for init in initiatives.initiatives:
@@ -604,10 +709,10 @@ def transform_week(
     missing dir (a fresh instance) simply yields no continuity context.
 
     ``focus_selector`` (optional) is called after the indexer with the threads
-    active this week (as :class:`FocusCandidate`s carrying status/age/relation) and
-    returns the ids the entry should lead on; the caller owns how they are chosen
-    (interactive prompt, ``--focus`` flag, …). Omitted or an empty return means the
-    model picks the lead itself."""
+    active this week (as :class:`FocusCandidate`s carrying repo/status/age/relation
+    and this week's cited work) and returns the ids the entry should lead on; the
+    caller owns how they are chosen (interactive prompt, ``--focus`` flag, …).
+    Omitted or an empty return means the model picks the lead itself."""
     raw_dir = Path(raw_dir) if raw_dir is not None else config.state_dir("raw")
     drafts_dir = Path(drafts_dir) if drafts_dir is not None else config.state_dir("drafts")
     root = Path(memory_root) if memory_root is not None else config.state_dir("memory")
@@ -657,9 +762,10 @@ def transform_week(
     due = [pair for mem in memories for pair in reviews_due(mem.registry, week)]
 
     # Focus — let the caller pick which thread(s) this week's entry leads on. The
-    # picker gets enriched, deduped candidates (status/age/relation/snippet).
+    # picker gets enriched, deduped candidates (repo/status/age/relation plus the
+    # concrete work cited for each thread this week).
     candidates = _active_threads(memories, week)
-    focus_candidates = _focus_candidates(candidates, initiatives, week)
+    focus_candidates = _focus_candidates(candidates, initiatives, activity, memories, week)
     selected_ids = list(focus_selector(focus_candidates)) if focus_selector else []
     candidate_ids = {c.id for c in focus_candidates}
     unknown = [tid for tid in selected_ids if tid not in candidate_ids]

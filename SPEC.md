@@ -249,6 +249,15 @@ caller's: `pipeline transform` prompts interactively on a TTY, takes
 (model chooses the lead) when neither applies — so CI never blocks. An
 unknown/inactive `--focus` id is an error.
 
+Each candidate is presented by the *work* cited for it this week, not by its
+title alone: thread titles and summaries are model-written and generalised, so
+the picker resolves each referencing initiative's proof-of-work links back
+against `activity.json` and lists the resulting PRs/issues/commits — the owner's
+own words — grouped under the initiative that cited them, beneath a
+repo/status/age/relation line. Attribution is exact by construction (only links
+of initiatives referencing that thread), a link resolving to nothing collected
+is dropped rather than guessed at, and a thread no initiative cited says so.
+
 Produces:
 
 1. `title` — a bare, specific subtitle (the topic only, no series name and no

@@ -5,7 +5,7 @@ import typer
 
 from pipeline import cli
 from pipeline.memory import Thread
-from pipeline.transform import FocusCandidate
+from pipeline.transform import FocusCandidate, InitiativeWork, WorkItem
 
 
 def _candidates() -> list[FocusCandidate]:
@@ -19,11 +19,30 @@ def _candidates() -> list[FocusCandidate]:
             ),
             relation="continues",
             age_weeks=4,
+            repo="midnightntwrk/midnight-node",
+            work=[
+                InitiativeWork(
+                    name="Local devnet funding via the bridge",
+                    items=[
+                        WorkItem(
+                            kind="pr",
+                            ref="#1934",
+                            title="fix: reserve-contracts CLI change-federated-ops on local-env",
+                        ),
+                        WorkItem(kind="pr", ref="#1936", title="chore: bump indexer", note="open"),
+                        WorkItem(
+                            kind="commit", ref="3f1a9c2", title="test: add block-production guard"
+                        ),
+                    ],
+                )
+            ],
         ),
+        # No initiative cited this one — it exercises the evidence-free fallback.
         FocusCandidate(
             thread=Thread(id="node-robustness", title="Node & toolkit robustness"),
             relation="new this week",
             age_weeks=0,
+            repo="midnightntwrk/midnight-node",
         ),
     ]
 
@@ -72,17 +91,73 @@ def test_focus_interactively_no_candidates_returns_empty():
     assert cli._focus_interactively([]) == []
 
 
-def test_focus_interactively_labels_status_age_relation_snippet(monkeypatch, capsys):
-    # The label must carry enough to tell terse/near-identical titles apart:
-    # status, age, this week's relation, and a summary snippet (v0.7 (d)).
+def test_focus_interactively_shows_meta_and_the_cited_work(monkeypatch, capsys):
+    # Thread titles/summaries are model-written and generalised, so the block is
+    # carried by the owner's own PR/issue/commit titles, grouped under the
+    # initiative that cited them. Meta (repo/status/age/relation) stays on one line,
+    # and the id is printed as a ready-to-paste --focus argument.
     monkeypatch.setattr(cli.typer, "prompt", lambda *a, **k: "")
     cli._focus_interactively(_candidates())
     out = capsys.readouterr().out
-    assert "4 weeks old" in out
+    assert "midnightntwrk/midnight-node · ongoing · 4 weeks old · this week: continues" in out
     assert "new this week" in out
-    assert "this week: continues" in out
-    assert "ongoing" in out  # thread.status
-    assert "run offline" in out  # from the summary snippet
+    assert "> Local devnet funding via the bridge" in out
+    assert "PR #1934" in out
+    assert "fix: reserve-contracts CLI change-federated-ops on local-env" in out
+    assert "commit 3f1a9c2" in out
+    assert "(open)" in out  # an unmerged PR never reads as shipped work
+    assert "--focus bridge-network" in out
+    assert "run offline" not in out  # the rolling summary is no longer shown
+
+
+def test_focus_interactively_says_new_this_week_once(monkeypatch, capsys):
+    # A thread that just started reports "new this week" as both its age and its
+    # relation; the meta line must not say it twice.
+    monkeypatch.setattr(cli.typer, "prompt", lambda *a, **k: "")
+    cli._focus_interactively(_candidates())
+    out = capsys.readouterr().out
+    assert "new this week" in out
+    assert "this week: new this week" not in out
+
+
+def test_focus_interactively_says_when_no_work_was_cited(monkeypatch, capsys):
+    # A thread the indexer touched that no initiative cited says so plainly —
+    # with the summary dropped, silence would leave the block unexplained.
+    monkeypatch.setattr(cli.typer, "prompt", lambda *a, **k: "")
+    cli._focus_interactively(_candidates())
+    out = capsys.readouterr().out
+    assert "(no work cited for this thread this week)" in out
+
+
+def test_focus_interactively_caps_work_per_initiative(monkeypatch, capsys):
+    # A busy initiative must not push the other candidates off the screen.
+    monkeypatch.setattr(cli.typer, "prompt", lambda *a, **k: "")
+    items = [WorkItem(kind="pr", ref=f"#{n}", title=f"Title {n}") for n in range(1, 8)]
+    cand = FocusCandidate(
+        thread=Thread(id="busy", title="Busy"),
+        relation="continues",
+        age_weeks=1,
+        work=[InitiativeWork(name="Lots", items=items)],
+    )
+    cli._focus_interactively([cand])
+    out = capsys.readouterr().out
+    assert "PR #4" in out
+    assert "PR #5" not in out
+    assert f"+ {7 - cli._WORK_PER_INITIATIVE} more" in out
+
+
+def test_focus_interactively_ellipsises_a_long_title(monkeypatch, capsys):
+    monkeypatch.setattr(cli.typer, "prompt", lambda *a, **k: "")
+    cand = FocusCandidate(
+        thread=Thread(id="long", title="Long"),
+        relation="continues",
+        age_weeks=1,
+        work=[InitiativeWork(name="One", items=[WorkItem(kind="pr", ref="#1", title="x" * 200)])],
+    )
+    cli._focus_interactively([cand])
+    out = capsys.readouterr().out
+    assert "x" * 200 not in out
+    assert "…" in out
 
 
 # --- selector resolution ----------------------------------------------------
