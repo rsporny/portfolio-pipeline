@@ -124,6 +124,13 @@ unexplained — e.g. "the model proposes, code disposes" means nothing to a read
 so either explain what it does in plain words or cut it. Prefer a concrete outcome
 over a catchphrase.
 
+Pitch each section at reader altitude: lead with WHAT CHANGED AND WHY IT MATTERS,
+not blow-by-blow internals. Do not reproduce a PR description — no file-by-file or
+function-by-function change lists, and no walking through the diff. Name a specific
+file, function, or symbol only when it is the point being made, not to narrate how
+the code is wired; a reader who doesn't know the repo should still follow every
+sentence.
+
 When a "Past published entries" block is given, those are the owner's OWN earlier
 devlog entries on related threads. Use them for continuity of voice and narrative
 arc — build on what was already said (a reader may have read it), never repeat or

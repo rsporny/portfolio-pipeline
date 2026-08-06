@@ -5,6 +5,29 @@ version are complete and no longer carried here; the roadmap for what's next
 lives in `SPEC.md`. Releases are git-tagged as signed annotated tags
 `vMAJOR.MINOR.PATCH` from v0.6 onward.
 
+## v0.8.0 — reader-altitude guard
+
+Keeps each generated section pitched to a reader who doesn't know the repo.
+
+- **Advisory altitude check:** a new `reader_altitude` check in
+  `src/pipeline/checks.py` (`warn`-severity — scored and reported, never a hard
+  block, because altitude is a judgement call unlike the content-policy gates).
+  Two deterministic proxies flag a section written at PR-description altitude: a
+  high density of code-level mechanics markers per 100 words (inline code, file
+  paths, `call()` syntax, dotted `A.b` identifiers — with proof-of-work links
+  stripped first so they never count) and a cluster of undefined domain acronyms
+  (common ones like API/CI/QA and any glossed on first use are exempt). The
+  social post gets a stricter mechanics bar; thresholds are lenient constants,
+  tuned in one place.
+- **Stage B guidance:** the prompt now steers toward "what changed and why it
+  matters" and explicitly warns off reproducing a PR description (file-by-file /
+  function-by-function change lists).
+- **Golden case:** `evals/cases/over-detailed/` — mechanics-heavy, jargon-laden
+  activity that tempts an over-detailed write-up, so the scorecard exercises the
+  guard against real model output.
+- Internal: the `##`-section splitter is factored into a shared
+  `_devlog_sections` helper reused by the continuity and altitude checks.
+
 ## v0.7.0 — indexer & thread-memory hardening
 
 From live-instance runs. Four fixes to how the registry — the pipeline's

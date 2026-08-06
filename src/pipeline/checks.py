@@ -29,6 +29,17 @@ SOCIAL_MIN, SOCIAL_MAX = 100, 180
 MAX_HASHTAGS = 3
 INITIATIVE_MIN, INITIATIVE_MAX = 2, 5
 
+# reader-altitude guard (advisory). A section pitched to a reader who doesn't know
+# the repo reads as "what changed and why it matters", not a PR description. Two
+# proxies flag the opposite: a high density of code-level mechanics markers
+# (inline code, file paths, call syntax, dotted identifiers) per 100 words, and a
+# cluster of domain acronyms left undefined. Both are judgement calls, so a hit is
+# a warn, never a hard gate. Thresholds are deliberately lenient — tune here.
+ALTITUDE_MECHANICS_PER_100W = 8  # devlog section ceiling
+ALTITUDE_SOCIAL_MECHANICS_PER_100W = 4  # social post is broad-audience — stricter
+ALTITUDE_JARGON_MAX = 2  # distinct undefined uncommon acronyms tolerated per section
+ALTITUDE_MIN_WORDS = 30  # below this a density ratio is too noisy to trust
+
 # Heuristic solicitation / call-to-action markers. The content policy forbids any
 # CTA, service offer, availability announcement, or solicitation. This regex net
 # catches the common phrasings; it is deliberately conservative and is not a
@@ -72,6 +83,59 @@ _NOVELTY = [
     r"\bfor the first time here\b",
 ]
 _NOVELTY_RE = re.compile("|".join(_NOVELTY), re.IGNORECASE)
+
+# Code-level mechanics markers used by the reader-altitude guard. Counted on prose
+# with URLs/markdown-links already stripped (a proof-of-work link is expected, not
+# a mechanics leak). ``_CALL_RE`` requires no space before "(" so a call like
+# ``build_context()`` matches while a prose parenthetical like "timeouts (3 tries)"
+# does not. ``_DOTTED_RE`` matches identifier chains (``Config.state_dir``) but
+# each segment must start with a letter, so version/decimal numbers never match.
+_MD_LINK_RE = re.compile(r"\[[^\]]*\]\([^)]*\)")
+_CODE_SPAN_RE = re.compile(r"`[^`]+`")
+_FILE_PATH_RE = re.compile(r"\b[\w-]+(?:/[\w.-]+)+\.\w{1,5}\b")
+_CALL_RE = re.compile(r"\b[A-Za-z_]\w*\([^)]*\)")
+_DOTTED_RE = re.compile(r"\b[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+\b")
+_DOTTED_STOP = {"e.g", "i.e"}  # abbreviations, not identifiers
+_ACRONYM_RE = re.compile(r"\b[A-Z]{2,5}\b")
+# Acronyms a general engineer reads without a gloss — not "domain jargon".
+_COMMON_ACRONYMS = frozenset(
+    {
+        "AI",
+        "API",
+        "CD",
+        "CI",
+        "CLI",
+        "CPU",
+        "CSS",
+        "DB",
+        "GPG",
+        "GPU",
+        "HTML",
+        "HTTP",
+        "HTTPS",
+        "ID",
+        "IO",
+        "JSON",
+        "OK",
+        "OS",
+        "PR",
+        "QA",
+        "RAM",
+        "REST",
+        "SDET",
+        "SDK",
+        "SQL",
+        "SSH",
+        "TCP",
+        "TLS",
+        "UI",
+        "URL",
+        "UX",
+        "XML",
+        "YAML",
+        "ZK",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -292,6 +356,20 @@ def check_initiatives(initiatives: Initiatives, ctx: CheckContext) -> list[Check
     return results
 
 
+def _devlog_sections(devlog: str) -> list[tuple[str, str]]:
+    """Split a devlog into ``(heading, body)`` sections at each ``##`` head. When
+    there are no ``##`` headings the whole devlog is one unheaded (``""``) section.
+    Shared by the continuity and altitude checks so both see the same spans."""
+    heads = list(_SECTION_RE.finditer(devlog))
+    if not heads:
+        return [("", devlog)]
+    spans: list[tuple[str, str]] = []
+    for i, m in enumerate(heads):
+        end = heads[i + 1].start() if i + 1 < len(heads) else len(devlog)
+        spans.append((m.group(1).strip(), devlog[m.end() : end]))
+    return spans
+
+
 def _section_initiative(text: str, initiatives: Initiatives):
     """The initiative a devlog section describes, matched by the proof-of-work URL
     it cites (exact link first, then owner/repo). Mirrors the engine's section↔
@@ -322,18 +400,8 @@ def check_continuity(
     if not ctx.prior_thread_ids:
         return [CheckResult("continuity_not_reset", True, "warn", "")]
 
-    devlog = content.devlog
-    heads = list(_SECTION_RE.finditer(devlog))
-    spans: list[tuple[str, str]] = []
-    if heads:
-        for i, m in enumerate(heads):
-            end = heads[i + 1].start() if i + 1 < len(heads) else len(devlog)
-            spans.append((m.group(1).strip(), devlog[m.end() : end]))
-    else:
-        spans = [("", devlog)]
-
     offenders: list[str] = []
-    for heading, text in spans:
+    for heading, text in _devlog_sections(content.devlog):
         init = _section_initiative(text, initiatives)
         if init is None or init.thread_ref is None:
             continue
@@ -354,6 +422,70 @@ def check_continuity(
             "; ".join(offenders),
         )
     ]
+
+
+def _strip_links(text: str) -> str:
+    """Drop markdown links and bare URLs so a proof-of-work link's slashes and dots
+    are never mistaken for code mechanics."""
+    return _URL_RE.sub(" ", _MD_LINK_RE.sub(" ", text))
+
+
+def _mechanics_markers(text: str) -> tuple[list[str], int]:
+    """The code-level mechanics markers in a section and its (link-stripped) word
+    count. Markers are counted without double-counting: code spans first, then file
+    paths, then call/dotted syntax in what remains."""
+    prose = _strip_links(text)
+    code_spans = _CODE_SPAN_RE.findall(prose)
+    prose = _CODE_SPAN_RE.sub(" ", prose)
+    words = _word_count(prose)
+    paths = _FILE_PATH_RE.findall(prose)
+    prose = _FILE_PATH_RE.sub(" ", prose)
+    calls = _CALL_RE.findall(prose)
+    dotted = [d for d in _DOTTED_RE.findall(prose) if d.lower() not in _DOTTED_STOP]
+    return code_spans + paths + calls + dotted, words
+
+
+def _undefined_jargon(text: str) -> list[str]:
+    """Distinct uncommon acronyms (first-seen order) that are not glossed on use. An
+    acronym adjacent to a parenthesis is treated as defined (``Rate Limiter (RL)``
+    or ``RL (rate limiter)``); common acronyms are never jargon."""
+    prose = _CODE_SPAN_RE.sub(" ", _strip_links(text))
+    seen: list[str] = []
+    for m in _ACRONYM_RE.finditer(prose):
+        tok = m.group(0)
+        if tok in _COMMON_ACRONYMS or tok in seen:
+            continue
+        before = prose[m.start() - 1] if m.start() else ""
+        after = prose[m.end() : m.end() + 2]
+        if before in "()" or "(" in after or ")" in after:
+            continue
+        seen.append(tok)
+    return seen
+
+
+def check_altitude(content: Content) -> list[CheckResult]:
+    """Advisory: keep each generated section pitched to a reader who doesn't know
+    the repo. A section dense with code-level mechanics (reproducing PR-description
+    internals) or leaning on a cluster of undefined domain acronyms reads at the
+    wrong altitude — flag it as a warn (a judgement call, never a hard gate). The
+    social post gets a stricter mechanics bar; highlights are terse tags and skipped."""
+    offenders: list[str] = []
+
+    def flag(label: str, text: str, ceiling: float) -> None:
+        markers, words = _mechanics_markers(text)
+        if words >= ALTITUDE_MIN_WORDS and len(markers) / words * 100 > ceiling:
+            offenders.append(
+                f"{label}: {len(markers)} mechanics marker(s)/{words}w ({', '.join(markers[:3])})"
+            )
+        jargon = _undefined_jargon(text)
+        if len(jargon) > ALTITUDE_JARGON_MAX:
+            offenders.append(f"{label}: undefined jargon {', '.join(jargon)}")
+
+    for heading, body in _devlog_sections(content.devlog):
+        flag(f'"{heading}"' if heading else "the entry", body, ALTITUDE_MECHANICS_PER_100W)
+    flag("social", content.social, ALTITUDE_SOCIAL_MECHANICS_PER_100W)
+
+    return [CheckResult("reader_altitude", not offenders, "warn", "; ".join(offenders))]
 
 
 def failures(results: list[CheckResult], severity: Severity | None = None) -> list[CheckResult]:
