@@ -5,6 +5,29 @@ version are complete and no longer carried here; the roadmap for what's next
 lives in `SPEC.md`. Releases are git-tagged as signed annotated tags
 `vMAJOR.MINOR.PATCH` from v0.6 onward.
 
+## v0.8.1 — the focus picker shows the work
+
+The interactive pick offered a thread title plus a rolling summary — both
+model-written and deliberately generalised, on a grouping the algorithm chose. A
+reviewer could not tell the candidates apart. Each candidate now leads with the
+thread name but is carried by the concrete work cited for it this week.
+
+- **Cited work per candidate:** `FocusCandidate` gained `repo` and `work`. The
+  work is resolved at prompt time by matching each referencing initiative's
+  proof-of-work links back against `activity.json` (`_work_index` /
+  `_thread_work` in `src/pipeline/transform.py`) — so every line shown is a PR,
+  issue or commit the reviewer wrote, provably attributed to that thread. It is
+  grouped under the initiative that cited it, which also shows *why* the work
+  was grouped together. A link that resolves to nothing collected is dropped
+  rather than guessed at; a PR's `outcome` rides along, so an unmerged one never
+  reads as shipped.
+- **Rolling summary dropped** from the picker. A thread the indexer touched that
+  no initiative cited now says so plainly — the absence is the signal.
+- Each block ends with a paste-ready `--focus <id>` line.
+- No new model call, no extra I/O, and no memory-schema change: both the week's
+  `Activity` and the Stage A initiatives are already in hand when the picker
+  fires.
+
 ## v0.8.0 — reader-altitude guard
 
 Keeps each generated section pitched to a reader who doesn't know the repo.

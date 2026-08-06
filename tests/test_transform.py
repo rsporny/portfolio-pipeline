@@ -14,6 +14,7 @@ from pipeline.memory import Assumption, Thread, ThreadRegistry, load_registry, s
 from pipeline.models import (
     Activity,
     Commit,
+    Issue,
     LinkedIssue,
     PullRequest,
     RepoActivity,
@@ -1024,25 +1025,182 @@ def test_active_threads_dedupes_by_id():
     assert [t.id for t in active] == ["shared"]
 
 
-def test_focus_candidates_carry_relation_and_age():
-    """Each candidate is labelled with this week's relation (from an initiative's
-    thread_ref, else new/active) and its age in whole weeks."""
+def _work_activity(week="2026-W27"):
+    """A week carrying one merged PR, one open PR, one closed-unmerged PR, an issue
+    and two commits — the raw material the focus picker cites work from."""
+    now = datetime(2026, 7, 3, tzinfo=UTC)
+    return Activity(
+        generated_at=now,
+        since=now,
+        until=now,
+        week=week,
+        repos=[
+            RepoActivity(
+                repo="o/platform",
+                commits=[
+                    Commit(
+                        sha="3f1a9c2deadbeef",
+                        date=now,
+                        message="refactor(publish): resolve drafts/ via state_dir\n\nbody",
+                        url="https://github.com/o/platform/commit/3f1a9c2deadbeef",
+                    ),
+                    Commit(
+                        sha="abc1234",
+                        date=now,
+                        message="style: fix fmt",
+                        url="https://github.com/o/platform/commit/abc1234",
+                    ),
+                ],
+                pull_requests=[
+                    PullRequest(
+                        number=5,
+                        title="Stateless engine: instance state under state.root",
+                        state="closed",
+                        url="https://github.com/o/platform/pull/5",
+                        merged_at=now,
+                    ),
+                    PullRequest(
+                        number=6,
+                        title="Bump the indexer",
+                        state="open",
+                        url="https://github.com/o/platform/pull/6",
+                    ),
+                    PullRequest(
+                        number=7,
+                        title="Merkle transparency log",
+                        state="closed",
+                        url="https://github.com/o/platform/pull/7",
+                    ),
+                ],
+                issues=[
+                    Issue(
+                        number=42,
+                        title="Local network should fund itself from the bridge",
+                        url="https://github.com/o/platform/issues/42",
+                    )
+                ],
+            )
+        ],
+    )
+
+
+def test_work_index_resolves_prs_issues_and_commits_by_url():
+    """Every collected item is addressable by its URL, so an initiative's
+    proof-of-work link resolves back to the owner's own title."""
+    from pipeline.transform import _work_index
+
+    index = _work_index(_work_activity())
+
+    pr = index["https://github.com/o/platform/pull/5"]
+    assert (pr.kind, pr.ref, pr.label) == ("pr", "#5", "PR #5")
+    assert pr.title == "Stateless engine: instance state under state.root"
+    assert pr.note == ""  # merged reads as plain shipped work
+    assert index["https://github.com/o/platform/pull/6"].note == "open"
+    assert index["https://github.com/o/platform/pull/7"].note == "closed unmerged"
+
+    issue = index["https://github.com/o/platform/issues/42"]
+    assert (issue.kind, issue.label) == ("issue", "issue #42")
+
+    commit = index["https://github.com/o/platform/commit/3f1a9c2deadbeef"]
+    assert commit.label == "commit 3f1a9c2"  # short sha
+    assert commit.title == "refactor(publish): resolve drafts/ via state_dir"  # subject only
+
+
+def test_work_index_ignores_urlless_items():
+    """An item collected without a URL is not addressable and must not collide with
+    another under an empty key."""
+    from pipeline.transform import _work_index
+
+    now = datetime(2026, 7, 3, tzinfo=UTC)
+    activity = Activity(
+        generated_at=now,
+        since=now,
+        until=now,
+        week="2026-W27",
+        repos=[RepoActivity(repo="o/r", pull_requests=[PullRequest(number=1, title="No url")])],
+    )
+    assert _work_index(activity) == {}
+
+
+def test_thread_work_groups_by_initiative_and_drops_unresolvable_links():
+    """Attribution comes only from the links of initiatives referencing the thread,
+    grouped by initiative. A link that resolves to nothing collected is dropped
+    rather than guessed at, and an initiative left with none is not shown."""
     from pipeline.models import ThreadRef
-    from pipeline.transform import _focus_candidates
+    from pipeline.transform import _thread_work, _work_index
+
+    inits = _inits(
+        (
+            "Stateless engine refactor",
+            "cat",
+            "https://github.com/o/platform/commit/3f1a9c2deadbeef",
+            "https://github.com/o/platform/pull/5",
+        ),
+        ("Merkle log, dropped", "cat", "https://github.com/o/platform/pull/7"),
+        ("Cites nothing collected", "cat", "https://github.com/o/platform/pull/999"),
+        ("Another thread's work", "cat", "https://github.com/o/platform/pull/6"),
+    )
+    for init in inits.initiatives[:3]:
+        init.thread_ref = ThreadRef(id="mine", relation="continues")
+    inits.initiatives[3].thread_ref = ThreadRef(id="theirs", relation="continues")
+
+    groups = _thread_work(inits, _work_index(_work_activity()), "mine")
+
+    assert [g.name for g in groups] == ["Stateless engine refactor", "Merkle log, dropped"]
+    # PRs lead the commits under them, whatever order the model cited them in.
+    assert [i.label for i in groups[0].items] == ["PR #5", "commit 3f1a9c2"]
+    assert [i.label for i in groups[1].items] == ["PR #7"]
+
+
+def test_thread_work_dedupes_a_link_cited_twice():
+    """Two initiatives citing the same PR list it once — the first that cites it."""
+    from pipeline.models import ThreadRef
+    from pipeline.transform import _thread_work, _work_index
+
+    inits = _inits(
+        ("First", "cat", "https://github.com/o/platform/pull/5"),
+        ("Second", "cat", "https://github.com/o/platform/pull/5/", "  "),
+    )
+    for init in inits.initiatives:
+        init.thread_ref = ThreadRef(id="mine", relation="continues")
+
+    groups = _thread_work(inits, _work_index(_work_activity()), "mine")
+    assert [g.name for g in groups] == ["First"]  # "Second" is left empty, so dropped
+
+
+def test_focus_candidates_carry_relation_age_repo_and_work():
+    """Each candidate is labelled with this week's relation (from an initiative's
+    thread_ref, else new/active), its age in whole weeks, the repo whose registry
+    holds it, and the concrete work cited for it."""
+    from pipeline.models import ThreadRef
+    from pipeline.transform import RepoMemory, _focus_candidates
 
     threads = [
         Thread(id="old", title="Old", started_week="2026-W23", last_active_week="2026-W27"),
         Thread(id="fresh", title="Fresh", started_week="2026-W27", last_active_week="2026-W27"),
     ]
-    inits = _inits(("Work", "cat"))
+    memories = [
+        RepoMemory(
+            repo="o/platform",
+            memory_dir=None,
+            context="",
+            registry=ThreadRegistry(threads=threads),
+        )
+    ]
+    inits = _inits(("Work", "cat", "https://github.com/o/platform/pull/5"))
     inits.initiatives[0].thread_ref = ThreadRef(id="old", relation="continues")
 
-    cands = {c.id: c for c in _focus_candidates(threads, inits, "2026-W27")}
+    cands = {
+        c.id: c for c in _focus_candidates(threads, inits, _work_activity(), memories, "2026-W27")
+    }
     assert cands["old"].relation == "continues"
     assert cands["old"].age_weeks == 4
     assert cands["old"].age_label == "4 weeks old"
+    assert cands["old"].repo == "o/platform"
+    assert [i.label for g in cands["old"].work for i in g.items] == ["PR #5"]
     assert cands["fresh"].relation == "new this week"  # started this week, unreferenced
     assert cands["fresh"].age_weeks == 0
+    assert cands["fresh"].work == []  # no initiative cited it — the picker says so
 
 
 # --- topics: front matter (category dividers) -------------------------------

@@ -118,7 +118,8 @@ per-series numbering), and all of it lives inside one adapter under
 - `uv run pipeline collect` — fetch activity from the last 7 days (or `--since`)
 - `uv run pipeline transform` — Stage A → indexer → Stage B, writes drafts and
   memory updates. Add `--focus <thread-id>` (repeatable) to lead the entry on
-  specific thread(s); omit it for an interactive pick (a non-interactive run
+  specific thread(s); omit it for an interactive pick, which lists each active
+  thread by the PRs/issues/commits cited for it this week (a non-interactive run
   auto-picks)
 - `uv run pipeline run` — collect + transform
 - `uv run pipeline review` — list drafts awaiting review (local/offline flow)

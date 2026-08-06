@@ -32,7 +32,7 @@ from .provenance.sign import fingerprint as gpg_fingerprint
 from .publish import PublishError, _resolve_site_dir, publish_approved, publish_custom
 from .review import list_drafts
 from .site_adapter import RenderContext, get_adapter
-from .transform import FocusCandidate, transform_week
+from .transform import FocusCandidate, WorkItem, transform_week
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
@@ -56,6 +56,11 @@ SLUG_OPTION = typer.Option(None, "--slug", help="Entry slug (default: the filena
 KIND_OPTION = typer.Option(None, "--kind", help="Kicker label (default: site shows Note)")
 DATE_OPTION = typer.Option(None, "--date", help="Published date YYYY-MM-DD (default: today)")
 
+# Focus-picker shape: cited work shown per initiative before the rest is summed
+# up as "+ N more", and the width a work item's title is ellipsised to.
+_WORK_PER_INITIATIVE = 4
+_WORK_TITLE_CHARS = 72
+
 
 def _focus_from_flag(focus: list[str], candidates: list[FocusCandidate]) -> list[str]:
     """Validate ``--focus`` ids against the threads active this week; a bad id is a
@@ -69,22 +74,51 @@ def _focus_from_flag(focus: list[str], candidates: list[FocusCandidate]) -> list
     return focus
 
 
+def _work_line(item: WorkItem, width: int) -> str:
+    """One cited PR/issue/commit: its label padded to the block's widest, then the
+    owner's own title, ellipsised, with an unmerged PR's outcome spelled out."""
+    title = item.title
+    if len(title) > _WORK_TITLE_CHARS:
+        title = title[: _WORK_TITLE_CHARS - 1].rstrip() + "…"
+    note = f"  ({item.note})" if item.note else ""
+    return f"          {item.label:<{width}}  {title}{note}"
+
+
+def _render_candidate(index: int, cand: FocusCandidate) -> None:
+    """Print one focus candidate. Thread titles and summaries are model-written and
+    deliberately generalised, so they are poor identifiers on their own — what a
+    reviewer recognises is their own PR/issue/commit titles. Hence the block leads
+    with the thread name but is *carried* by the work cited for it this week,
+    grouped under the initiative that produced it (which also shows why that work
+    was grouped together). A thread the indexer touched but no initiative cited
+    says so plainly — the absence is itself the signal."""
+    # A thread that just started reports "new this week" as both its age and its
+    # relation — say it once.
+    relation = "" if cand.relation == cand.age_label else f"this week: {cand.relation}"
+    meta = [cand.repo, cand.thread.status, cand.age_label, relation]
+    typer.echo(f"\n  [{index}] {cand.thread.title}")
+    typer.echo(f"      {' · '.join(part for part in meta if part)}")
+    width = max((len(item.label) for group in cand.work for item in group.items), default=0)
+    for group in cand.work:
+        typer.echo(f"      > {group.name}")
+        for item in group.items[:_WORK_PER_INITIATIVE]:
+            typer.echo(_work_line(item, width))
+        if len(group.items) > _WORK_PER_INITIATIVE:
+            typer.echo(f"          + {len(group.items) - _WORK_PER_INITIATIVE} more")
+    if not cand.work:
+        typer.echo("      (no work cited for this thread this week)")
+    typer.echo(f"      --focus {cand.id}")
+
+
 def _focus_interactively(candidates: list[FocusCandidate]) -> list[str]:
     """Print the threads active this week and let the user pick which lead the
-    entry. Each is labelled with status/age + this week's relation and a summary
-    snippet so terse or near-identical titles are distinguishable. Empty input
-    means auto (the model picks)."""
+    entry. Empty input means auto (the model picks)."""
     if not candidates:
         return []
     typer.echo(f"\nThreads active this week ({len(candidates)}):")
     for i, cand in enumerate(candidates, 1):
-        thread = cand.thread
-        typer.echo(
-            f"  [{i}] {thread.title} ({thread.id}) "
-            f"— {thread.status}, {cand.age_label}, this week: {cand.relation}"
-        )
-        if cand.summary_snippet:
-            typer.echo(f"      {cand.summary_snippet}")
+        _render_candidate(i, cand)
+    typer.echo("")
     raw = typer.prompt(
         "Focus which? (comma-separated numbers, empty = let the model pick)",
         default="",
